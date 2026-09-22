@@ -102,4 +102,4 @@ updated version will be posted at this address.
 
 ## Contact
 
-Questions about privacy: **[YOUR EMAIL ADDRESS]**
+Questions about privacy: **Fullerja8@gmail.com**

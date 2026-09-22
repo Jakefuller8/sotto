@@ -23,7 +23,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const VERSION = "1.8.0";
+const VERSION = "1.9.0";
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, "public");
 
@@ -58,7 +58,16 @@ const stats = {
   submits: 0,
   charsRelayed: 0, // ciphertext length, a proxy for dictation length
   seen: new Map(), // hashedRoom -> { first, last, days:Set, dictations }
+  // date -> { users:Set<hashedId>, dictations }. Totals alone cannot show
+  // whether a pilot is growing or dying — "47 dictations" reads the same for
+  // eight steady users and one person on day one. Kept per day so the shape
+  // is visible.
+  daily: new Map(),
 };
+
+// A month of history is enough to see a trend; 90 bounds the file so it
+// cannot grow without limit.
+const DAILY_KEEP_DAYS = 90;
 
 // ---- persistence -------------------------------------------------------
 // returningUsers.d7 is the number this pilot exists to produce, and it needs
@@ -92,6 +101,10 @@ function encodeStats() {
       key,
       { first: s.first, last: s.last, days: Array.from(s.days), dictations: s.dictations },
     ]),
+    daily: Array.from(stats.daily.entries())
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+      .slice(0, DAILY_KEEP_DAYS)
+      .map(([date, d]) => [date, { users: Array.from(d.users), dictations: d.dictations }]),
   });
 }
 
@@ -116,6 +129,12 @@ function loadStats() {
       (d.seen || []).map(([key, s]) => [
         key,
         { first: s.first, last: s.last, days: new Set(s.days || []), dictations: s.dictations || 0 },
+      ])
+    );
+    stats.daily = new Map(
+      (d.daily || []).map(([date, v]) => [
+        date,
+        { users: new Set(v.users || []), dictations: v.dictations || 0 },
       ])
     );
   } catch {
@@ -181,6 +200,14 @@ function note(room, kind, size) {
   s.last = today();
   s.days.add(today());
 
+  let day = stats.daily.get(today());
+  if (!day) {
+    day = { users: new Set(), dictations: 0 };
+    stats.daily.set(today(), day);
+  }
+  day.users.add(key);
+  if (kind === "dictation") day.dictations++;
+
   if (kind === "install") {
     console.log(`event=install user=${key}`);
     saveStats();
@@ -197,6 +224,33 @@ function note(room, kind, size) {
   }
 
   saveStats();
+}
+
+function dayKey(offset) {
+  return new Date(Date.now() - offset * 86400000).toISOString().slice(0, 10);
+}
+
+// Distinct users across the last n days, deduplicated — someone active on
+// three of them counts once.
+function activeSince(days) {
+  const people = new Set();
+  for (let i = 0; i < days; i++) {
+    const d = stats.daily.get(dayKey(i));
+    if (d) for (const u of d.users) people.add(u);
+  }
+  return people.size;
+}
+
+// Oldest first, and days with no activity are included as zeroes — a gap in
+// the series is a signal, and omitting it would hide the shape.
+function recentDays(days) {
+  const out = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const date = dayKey(i);
+    const d = stats.daily.get(date);
+    out.push({ date, users: d ? d.users.size : 0, dictations: d ? d.dictations : 0 });
+  }
+  return out;
 }
 
 // A laptop parked on a long poll is present by definition — that held request
@@ -355,6 +409,14 @@ const server = http.createServer(async (req, res) => {
         ? Math.round(stats.charsRelayed / stats.dictations)
         : 0,
       returningUsers: retained,
+
+      // Totals say how much has happened; these say whether it is still
+      // happening. A pilot that is working and one that stalled after day one
+      // look identical in a running total.
+      activeToday: (stats.daily.get(today()) || { users: new Set() }).users.size,
+      activeThisWeek: activeSince(7),
+      daily: recentDays(30),
+
       activeRooms: rooms.size,
       // "disk" = a configured volume, survives redeploys.
       // "ephemeral" = writable but no SOTTO_DATA_DIR, so the next deploy wipes

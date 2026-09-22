@@ -29,8 +29,26 @@ function ok(name, condition, detail) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Killing the relay drops any request still in flight, and the resulting
+// rejection would take the whole harness down after every assertion had
+// already passed — a green run reported as a crash. Record it instead, so a
+// genuine problem is still visible but teardown noise cannot mask the summary.
+let tearingDown = false;
+process.on("unhandledRejection", (err) => {
+  const detail = (err && (err.url || err.message)) || String(err);
+  if (tearingDown) {
+    console.log(`  note  request dropped during shutdown — ${detail}`);
+    return;
+  }
+  failed++;
+  console.log(`  FAIL  unhandled rejection — ${detail}`);
+});
+
 async function get(path) {
-  const res = await fetch(BASE + path, { cache: "no-store" });
+  const res = await fetch(BASE + path, { cache: "no-store" }).catch((e) => {
+    e.url = path;
+    throw e;
+  });
   const text = await res.text();
   let body = null;
   try { body = JSON.parse(text); } catch {}
@@ -78,10 +96,35 @@ async function derive(myPriv, peerPubB64) {
   return { key, bits: Buffer.from(bits).toString("hex"), hash };
 }
 
+// Stops a spawned relay and removes its data directory, in that order. The
+// SIGTERM flush is the whole point of the persistence design, so teardown has
+// to let it finish rather than delete the file out from under it.
+async function stopAndClean(proc, dir) {
+  tearingDown = true;
+  if (proc && proc.exitCode === null && !proc.killed) {
+    const exited = new Promise((resolve) => proc.once("exit", resolve));
+    proc.kill();
+    await Promise.race([exited, sleep(3000)]);
+  }
+  try {
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  } catch {
+    // A leftover temp directory is not worth failing a green run over.
+  }
+}
+
 async function main() {
+  // An isolated data directory per run. Without it the server loads whatever
+  // server/.data holds from a previous run, so counters start non-zero and
+  // every "grew by one" assertion fails against history it did not create.
+  const dataDir = path.join(
+    os.tmpdir(),
+    "sotto-test-" + Date.now() + "-" + Math.random().toString(16).slice(2)
+  );
+
   const server = spawn("node", ["server.js"], {
     cwd: __dirname,
-    env: { ...process.env, PORT: String(PORT) },
+    env: { ...process.env, PORT: String(PORT), SOTTO_DATA_DIR: dataDir },
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -455,12 +498,18 @@ async function main() {
     failed++;
     console.log("\n  FAIL  harness threw — " + err.message + "\n" + err.stack);
   } finally {
-    server.kill();
+    // kill() sends SIGTERM, and the server's handler flushes stats.json on the
+    // way out — so deleting immediately races that write and fails with
+    // ENOTEMPTY. Wait for the process to actually exit first.
+    await stopAndClean(server, dataDir);
   }
 
   await survivesRestart();
 
-  console.log(`\n${passed} passed, ${failed} failed\n`);
+  // stderr is unbuffered. console.log followed by process.exit() can discard
+  // buffered stdout when output is redirected to a file, which silently ate
+  // the summary and made a finished run look like a crash.
+  process.stderr.write(`\n${passed} passed, ${failed} failed\n\n`);
   process.exit(failed ? 1 : 0);
 }
 
@@ -530,14 +579,13 @@ async function survivesRestart() {
         after.collectingSince === before.collectingSince,
         `${before.collectingSince} -> ${after.collectingSince}`);
     } finally {
-      second.kill();
+      await stopAndClean(second, dir);
     }
   } catch (err) {
     failed++;
     console.log("  FAIL  restart harness threw — " + err.message);
   } finally {
-    if (first) first.kill();
-    fs.rmSync(dir, { recursive: true, force: true });
+    await stopAndClean(first, dir);
   }
 }
 

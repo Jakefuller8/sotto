@@ -136,7 +136,6 @@
     border-radius: 8px; padding: 9px 10px; margin: 0;
     -webkit-user-select: text; user-select: text;
   }
-  #homeScreenHelp[hidden] { display: none; }
   ol.steps {
     margin: 2px 0 0; padding-left: 20px;
     font-size: 14px; line-height: 1.7; color: var(--fg);
@@ -184,28 +183,56 @@
   }
   .lock { color: var(--live); font-size: 13px; }
 
-  .install {
-    position: fixed;
-    left: 14px; right: 14px;
-    bottom: calc(env(safe-area-inset-bottom) + 14px);
-    background: var(--raised);
-    border: 1px solid var(--edge);
-    border-radius: 14px;
-    padding: 15px 16px;
-    z-index: 9;
+  .installbar {
+    display: flex; align-items: center; gap: 11px; width: 100%;
+    margin: 0 0 10px; padding: 11px 13px;
+    background: var(--raised); border: 1px solid var(--signal);
+    border-radius: 12px; color: var(--fg); font: inherit; text-align: left;
   }
-  .install[hidden] { display: none; }
-  .install-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-  .install strong { font-size: 15px; font-weight: 500; }
-  .install p { margin: 8px 0 0; font-size: 13px; line-height: 1.55; color: var(--dim); }
-  .install .share {
-    display: inline-block; padding: 1px 6px; border: 1px solid var(--edge);
-    border-radius: 5px; color: var(--fg); font-size: 12px;
+  .installbar[hidden] { display: none; }
+  .installbar-icon { color: var(--signal); display: flex; flex: none; }
+  .installbar-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .installbar-text b { font-size: 14px; font-weight: 500; }
+  .installbar-text span { font-size: 12px; color: var(--dim); }
+  .installbar-go { color: var(--dim); font-size: 20px; flex: none; }
+
+  .back {
+    align-self: flex-start; background: none; border: 0; padding: 0;
+    color: var(--dim); font: inherit; font-size: 14px;
   }
-  .install .x {
-    background: none; border: 0; color: var(--dim);
-    font-size: 22px; line-height: 1; padding: 0 2px; cursor: pointer;
+  ol.bigsteps { margin: 4px 0 0; padding-left: 24px; }
+  ol.bigsteps li { margin: 0 0 20px; font-size: 15px; line-height: 1.5; color: var(--fg); }
+  ol.bigsteps li::marker { color: var(--signal); font-weight: 600; }
+  ol.bigsteps b { font-weight: 600; }
+
+  /* A small likeness of Safari's bottom bar, with the target ringed, so the
+     button is recognised by shape rather than only by name. */
+  .safaribar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 10px 0 0; padding: 7px 11px;
+    background: var(--ink); border: 1px solid var(--edge); border-radius: 9px;
   }
+  .safaribar i { color: #4a5059; font-style: normal; font-size: 15px; }
+  .safaribar .shareglyph {
+    width: 11px; height: 13px; border: 1.5px solid #4a5059; border-top: 0;
+    position: relative; border-radius: 0 0 2px 2px;
+  }
+  .safaribar .shareglyph::after {
+    content: "↑"; position: absolute; left: 50%; top: -9px;
+    transform: translateX(-50%); font-size: 12px; line-height: 1;
+  }
+  .safaribar em {
+    font-style: normal; color: var(--warn); font-size: 14px; letter-spacing: 1px;
+    width: 30px; height: 30px; border: 2px solid var(--warn); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ahs {
+    display: flex; align-items: center; gap: 9px; margin: 10px 0 0; padding: 9px 11px;
+    background: var(--ink); border: 1px solid var(--edge); border-radius: 9px;
+    font-size: 13px; color: var(--dim);
+  }
+  .ahs b { color: var(--warn); font-size: 16px; }
+
   .install-go {
     width: 100%; margin: 12px 0 0; padding: 11px; border: 0; border-radius: 9px;
     background: var(--signal); color: #fff; font: inherit; font-size: 15px; font-weight: 500;
@@ -231,6 +258,23 @@
 <div class="note" id="note"></div>
 <div class="pairhint" id="pairhint"></div>
 
+<!-- Persistent, not dismissible. The old version was a card with an X, and
+     once that was closed the instructions could only be found in Settings —
+     which nobody does. This cannot be lost; it removes itself once Sotto is
+     running from the home screen. -->
+<button class="installbar" id="installBar" hidden>
+  <span class="installbar-icon" aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 8.5v6M9 11.5l3-3 3 3"/>
+    </svg>
+  </span>
+  <span class="installbar-text">
+    <b>Add Sotto as an app</b>
+    <span>Three taps, already paired</span>
+  </span>
+  <span class="installbar-go" aria-hidden="true">›</span>
+</button>
+
 <button class="talk" id="talk" disabled>
   Hold to talk
   <span class="meter" id="meter"><i></i><i></i><i></i><i></i><i></i></span>
@@ -245,20 +289,34 @@
 </footer>
 
 
-<div class="install" id="install" hidden>
-  <div class="install-head">
-    <strong>Add Sotto to your home screen?</strong>
-    <button class="x" id="installNo" aria-label="Dismiss">&times;</button>
-  </div>
-  <div id="installIos">
-    <p class="stepnote" style="margin:0 0 8px">One tap from your home screen, already paired, ready to talk.</p>
-    <ol class="steps">
-      <li>Tap <b>Share</b> — the square with an arrow, bottom centre of Safari.</li>
-      <li>Swipe up, then tap <b>Add to Home Screen</b>.</li>
-      <li>Tap <b>Add</b>, top right.</li>
-    </ol>
-  </div>
+
+<div class="sheet" id="homeSheet">
+  <button class="back" id="homeBack">‹ Back</button>
+
+  <h2>Add Sotto as an app</h2>
+  <p>It opens straight from your home screen, already connected to your laptop.</p>
+
+  <ol class="bigsteps" id="homeSteps">
+    <li>
+      <span>Tap the <b>···</b> button at the bottom right of Safari.</span>
+      <span class="safaribar" aria-hidden="true">
+        <i>‹</i><i>›</i>
+        <i class="shareglyph"></i>
+        <i>▭</i>
+        <em>···</em>
+      </span>
+    </li>
+    <li><span>Tap <b>Share</b>.</span></li>
+    <li><span>Swipe up, then tap <b>Add to Home Screen</b>.</span>
+      <span class="ahs" aria-hidden="true"><b>+</b> Add to Home Screen</span>
+    </li>
+  </ol>
+
   <button class="install-go" id="installGo" hidden>Install</button>
+
+  <p class="stepnote" id="homeFoot">This disappears once Sotto is on your home screen.</p>
+
+  <button class="close" id="homeDone">Done</button>
 </div>
 
 <div class="sheet" id="sheet">
@@ -284,18 +342,6 @@
       Keep the mic ready between sentences
     </label>
     <p class="stepnote">iOS plays a chime whenever it starts listening, and no app can silence it. Keeping the mic ready means it chimes <b>once when you start</b> instead of on every sentence. The trade: the mic stays open during pauses, and iOS sends that audio to Apple to transcribe. Turn this off and you get a chime per sentence but the mic closes immediately.</p>
-  </div>
-
-  <div class="field" id="homeScreenHelp">
-    <span>Add Sotto to your home screen</span>
-    <ol class="steps" id="homeScreenSteps">
-      <li>Tap the <b>Share</b> button — the square with an arrow pointing up, at the <b>bottom centre</b> of Safari.</li>
-      <li>Swipe up on the list that appears.</li>
-      <li>Tap <b>Add to Home Screen</b>.</li>
-      <li>Tap <b>Add</b>, top right.</li>
-      <li>Leave Safari and open <b>Sotto</b> from your home screen.</li>
-    </ol>
-    <p class="stepnote">It opens fullscreen and already paired, so it is one tap to talk.</p>
   </div>
 
   <div class="field">
@@ -350,8 +396,12 @@
     pairhint: document.getElementById("pairhint"),
     diag: document.getElementById("diag"),
     quiet: document.getElementById("quiet"),
-    homeScreenHelp: document.getElementById("homeScreenHelp"),
-    homeScreenSteps: document.getElementById("homeScreenSteps")
+    installBar: document.getElementById("installBar"),
+    homeSheet: document.getElementById("homeSheet"),
+    homeBack: document.getElementById("homeBack"),
+    homeDone: document.getElementById("homeDone"),
+    homeSteps: document.getElementById("homeSteps"),
+    homeFoot: document.getElementById("homeFoot"),
   };
 
   // A scanned link always wins over the cached code, and both spellings are
@@ -433,9 +483,6 @@
         "\n\nThis icon launched without a pairing code, so it fell back to " +
         (cached.length === 6 ? "the cached one." : "a new one.");
     }
-
-    // The steps are pointless once it is already installed.
-    if (els.homeScreenHelp) els.homeScreenHelp.hidden = LAUNCH_STANDALONE;
   }
 
   // ---- end-to-end encryption -------------------------------------------
@@ -935,18 +982,9 @@
   });
   els.closeSheet.addEventListener("click", function () { els.sheet.dataset.open = "false"; });
 
-  // ---- home screen install -----------------------------------------------
-  // Installing to the home screen genuinely helps \u2014 an installed app keeps the
-  // pairing stable and is less likely to be evicted than a Safari tab \u2014 but it
-  // must not be a wall in front of a first-time user.
-  //
-  // This used to be a full-screen gate shown on first load, so a new user
-  // scanning the QR was made to do a multi-step iOS share-sheet ritual before
-  // hearing a single word transcribed. The dismissible banner further down
-  // already implements the right pattern: it holds back until the user has
-  // actually dictated something, so the first thing they meet is the product
-  // rather than an upsell. The gate made that banner unreachable on a first
-  // visit. Ask after the value has landed, not before.
+  els.homeBack.addEventListener("click", function () { els.homeSheet.dataset.open = "false"; });
+  els.homeDone.addEventListener("click", function () { els.homeSheet.dataset.open = "false"; });
+  els.installBar.addEventListener("click", function () { els.homeSheet.dataset.open = "true"; });
 
   // ---- speech ------------------------------------------------------------
 
@@ -1175,60 +1213,56 @@
   // Add to Home Screen steps.
 
   (function installPrompt() {
-    var card = document.getElementById("install");
-    var dismiss = document.getElementById("installNo");
+    var bar = els.installBar;
     var go = document.getElementById("installGo");
-    var iosText = document.getElementById("installIos");
-    if (!card) return;
+    if (!bar) return;
 
-    var standalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      window.navigator.standalone === true;
+    function installed() {
+      return (
+        window.matchMedia("(display-mode: standalone)").matches ||
+        window.navigator.standalone === true
+      );
+    }
 
-    // Already an installed app: nothing to offer.
-    if (standalone) return;
+    // The bar is not dismissible. Its predecessor had an X, and closing it
+    // hid the instructions behind Settings, where nobody looks. The only
+    // thing that removes it is actually installing.
+    function sync() {
+      var done = installed();
+      bar.hidden = done;
+      if (done) els.homeSheet.dataset.open = "false";
+    }
 
-    // This early return used to sit above the definition of
-    // window.sottoOfferInstall, so once "dismissed" was set — by the × or
-    // automatically on appinstalled — the function was never defined again and
-    // no install prompt could ever appear on that phone. Dismissal is now for
-    // this session only, and the steps also live permanently in Settings, so
-    // the instruction cannot be lost.
-    var dismissedThisSession = false;
-
+    // Android gets a real one-tap install via beforeinstallprompt. iOS has no
+    // such API, so there the share-sheet steps are all we can offer.
     var deferred = null;
     window.addEventListener("beforeinstallprompt", function (ev) {
       ev.preventDefault();
       deferred = ev;
-      iosText.textContent = "Install it for a fullscreen app with its own icon.";
       go.hidden = false;
-    });
-
-    dismiss.addEventListener("click", function () {
-      card.hidden = true;
-      dismissedThisSession = true;
+      els.homeSteps.hidden = true;
+      els.homeFoot.textContent = "Install it as a fullscreen app with its own icon.";
     });
 
     go.addEventListener("click", function () {
       if (!deferred) return;
       deferred.prompt();
       deferred.userChoice.then(function () {
-        card.hidden = true;
-        dismissedThisSession = true;
         deferred = null;
+        sync();
       });
     });
 
-    window.sottoOfferInstall = function () {
-      if (card.hidden === false) return;
-      if (dismissedThisSession) return;
-      card.hidden = false;
-    };
+    window.addEventListener("appinstalled", sync);
+    // iOS fires no event for "Add to Home Screen", so the only reliable
+    // signal is the display mode on the next launch.
+    window.matchMedia("(display-mode: standalone)").addEventListener?.("change", sync);
 
-    window.addEventListener("appinstalled", function () {
-      card.hidden = true;
-      dismissedThisSession = true;
-    });
+    // Kept for the call sites that offer the app after a successful
+    // dictation; with a permanent bar there is nothing left to reveal.
+    window.sottoOfferInstall = sync;
+
+    sync();
   })();
 
   if ("serviceWorker" in navigator) {

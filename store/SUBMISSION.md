@@ -10,38 +10,34 @@ hosting the privacy policy and taking screenshots.
 You need a public URL before you can submit. GitHub Pages is free and you
 already have the repo.
 
-1. In `store/privacy-policy.html`, replace `[YOUR EMAIL ADDRESS]` with a real
-   address. A contact address is mandatory.
-2. Create a folder called `docs` in your repo root and put `privacy-policy.html`
-   inside it, renamed to `index.html`.
-3. Repo → **Settings** → **Pages** → under Source pick **Deploy from a branch**,
+The contact address is already filled in (`Fullerja8@gmail.com`) and `docs/`
+is already committed, so only the switch is left:
+
+1. Repo → **Settings** → **Pages** → under Source pick **Deploy from a branch**,
    branch `main`, folder `/docs` → **Save**.
-4. Wait about two minutes. Your URL becomes:
+2. Wait about two minutes. Your URL becomes:
    `https://jakefuller8.github.io/sotto/`
-5. Open it and confirm it renders.
+3. Open it and confirm it renders.
 
 Keep that URL. You'll paste it twice during submission.
 
 ---
 
-## Part 2 — Package the extension (5 min)
+## Part 2 — Package the extension (10 seconds)
 
-The zip must have `manifest.json` at its **root**, not inside a folder.
+```bash
+store/build-zip.sh
+```
 
-**macOS:** open the `extension` folder, select all the files *inside* it
-(Cmd+A), right-click → **Compress**. You'll get `Archive.zip` — rename it
-`sotto-1.8.0.zip`.
+That writes `store/sotto-<version>.zip`, named from the manifest so it can't
+disagree with what you upload.
 
-Do **not** zip the `extension` folder itself. That nests everything one level
-down and the upload will be rejected.
-
-Before zipping, delete these two development-only files:
-
-- `qr.test.js`
-- `test-page.html`
-
-They're harmless but reviewers flag unexplained files, and neither ships any
-value to users.
+It exists because two hand-packaging mistakes both fail at upload, and neither
+is obvious: zipping the `extension` folder itself nests `manifest.json` one
+level down (the store requires it at the zip root), and shipping `qr.test.js`
+or `test-page.html` invites reviewer questions about files that do nothing for
+users. The script strips those and refuses to finish if either problem is
+present.
 
 ---
 
@@ -50,7 +46,7 @@ value to users.
 1. Go to `https://chrome.google.com/webstore/devconsole`
 2. Sign in and pay the **one-time $5** registration fee
 3. Click **Items** → **+ New Item**
-4. Drag in `sotto-1.8.0.zip`
+4. Drag in the zip from Part 2
 5. Wait for it to process, then fill in the fields below
 
 ---
@@ -100,7 +96,7 @@ Sotto is a microphone, not an assistant. It does not record, transcribe to a fil
 
 PERMISSIONS
 
-Storage, to keep your pairing key on your own device. Access to our relay address only — nothing else. The extension cannot read your conversations or any other site.
+Storage, to keep your pairing key on your own device. Access to our relay, which is the only server Sotto contacts. Access to the five supported chat sites, used for one thing: placing your dictated text into the message box. Sotto does not read your conversations, your history, or any other site.
 
 BUILT AT WHARTON
 
@@ -158,6 +154,16 @@ Stores the user's pairing code and their end-to-end encryption key locally on th
 `host permission (sotto-relay.onrender.com)`
 ```
 The extension retrieves the user's own dictated text from this relay, which is the only server it contacts. Text is encrypted on the user's phone before it reaches the relay and is decrypted locally by the extension.
+```
+
+`scripting`
+```
+Content scripts only run when a page loads, so a chat tab the user already had open before installing or updating Sotto would have no script running and the extension would silently do nothing there. This permission is used once, on install and update, to inject the same content script into already-open supported tabs so the user does not have to reload them. It is never used to inject anything else.
+```
+
+`host permissions (claude.ai, chatgpt.com, chat.openai.com, gemini.google.com, aistudio.google.com, www.perplexity.ai)`
+```
+These are the supported AI chat sites, the same list already declared in content_scripts. The host permission is required for the one-time injection described above; without it the extension cannot reach a tab that was already open. On these sites the extension does one thing: place the user's own dictated text into the message box. It does not read page content, conversations or history.
 ```
 
 **Are you using remote code?**
