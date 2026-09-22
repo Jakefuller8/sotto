@@ -181,6 +181,43 @@ t(
   "ok"
 );
 
+console.log("\nAnalytics persistence");
+
+// returningUsers.d7 is the number the pilot exists to produce and it needs a
+// week of history. Held in memory it reset on every deploy — ten in one day
+// during development — so it could never accumulate.
+const srvSrc0 = read("./server.js");
+t("counters are written to disk", /function saveStatsNow\(\)/.test(srvSrc0) ? "ok" : "missing", "ok");
+t("counters are read back on boot", /^loadStats\(\);$/m.test(srvSrc0) ? "ok" : "missing", "ok");
+t(
+  "writes are atomic",
+  /fs\.renameSync\(tmp, STATS_FILE\)/.test(srvSrc0) ? "ok" : "not atomic — a crash mid-write loses the data",
+  "ok"
+);
+t(
+  "flushed on SIGTERM (Render's redeploy signal)",
+  /SIGTERM[\s\S]{0,200}saveStatsNow\(\)/.test(srvSrc0) ? "ok" : "missing",
+  "ok"
+);
+t(
+  "writes are coalesced rather than one per dictation",
+  /function saveStats\(\)[\s\S]{0,200}setTimeout\(saveStatsNow/.test(srvSrc0) ? "ok" : "missing",
+  "ok"
+);
+// Render's filesystem is writable without a disk, so a successful write does
+// not prove durability. Reporting "disk" in that case would hide the loss.
+t(
+  "an unconfigured data dir reports ephemeral, not disk",
+  /persistence = CONFIGURED_DIR \? "disk" : "ephemeral"/.test(srvSrc0) ? "ok" : "missing",
+  "ok"
+);
+t("persistence state is exposed in /stats", /\n\s+persistence,/.test(srvSrc0) ? "ok" : "missing", "ok");
+t(
+  "a corrupt file does not stop the relay",
+  /catch \{[\s\S]{0,120}stats_load_failed/.test(srvSrc0) ? "ok" : "missing",
+  "ok"
+);
+
 console.log("\nPresence while parked on a long poll");
 
 // The relay holds a laptop's poll for HOLD_MS but expires presence after

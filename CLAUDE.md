@@ -365,7 +365,17 @@ code bug.
 - **iOS suspends background pages.** App must be foregrounded, screen on.
 - **Selectors will break** when Claude or ChatGPT reship their UI.
   `div[contenteditable="true"]` is the generic fallback.
-- **Analytics are in memory** and reset on redeploy or sleep.
+- **Analytics persist to a JSON file** (`SOTTO_DATA_DIR/stats.json`), written
+  atomically and flushed on SIGTERM, which is what Render sends on redeploy.
+
+  **This needs a Render disk to actually work.** Attach one to the service and
+  set `SOTTO_DATA_DIR` to its mount path. Render's filesystem is writable
+  without a disk, so the write succeeds either way and durability cannot be
+  inferred from success — which is why `/stats` reports `persistence` as
+  `disk` (configured volume), `ephemeral` (writable, but wiped next deploy) or
+  `memory` (not writable). **If it is not `disk` during the pilot,
+  `returningUsers.d7` is not being collected**, and that is the number
+  CLAUDE.md says decides the project.
 
 ---
 

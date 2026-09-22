@@ -23,7 +23,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const VERSION = "1.7.0";
+const VERSION = "1.8.0";
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, "public");
 
@@ -60,6 +60,105 @@ const stats = {
   seen: new Map(), // hashedRoom -> { first, last, days:Set, dictations }
 };
 
+// ---- persistence -------------------------------------------------------
+// returningUsers.d7 is the number this pilot exists to produce, and it needs
+// seven days of history. In memory it reset on every deploy — ten in one day
+// during development — so the measurement could never accumulate.
+//
+// Still no dependencies: one JSON file, written atomically. Point
+// SOTTO_DATA_DIR at a Render disk, or this falls back to a local directory
+// that does not survive a redeploy. /stats reports which, so a
+// misconfiguration is visible rather than silently losing a week of data.
+const CONFIGURED_DIR = !!process.env.SOTTO_DATA_DIR;
+const DATA_DIR = process.env.SOTTO_DATA_DIR || path.join(__dirname, ".data");
+const STATS_FILE = path.join(DATA_DIR, "stats.json");
+
+// Three states, not two. Render's filesystem is writable without a disk
+// attached, so a successful write proves nothing — it would still be wiped on
+// the next deploy while reporting "disk" and quietly losing the pilot's only
+// measurement. "ephemeral" is that case, named so it is visible in /stats.
+let persistence = "memory";
+
+function encodeStats() {
+  return JSON.stringify({
+    v: 1,
+    startedAt: stats.startedAt,
+    pairings: stats.pairings,
+    dictations: stats.dictations,
+    submits: stats.submits,
+    charsRelayed: stats.charsRelayed,
+    // Map and Set do not survive JSON, so both are flattened.
+    seen: Array.from(stats.seen.entries()).map(([key, s]) => [
+      key,
+      { first: s.first, last: s.last, days: Array.from(s.days), dictations: s.dictations },
+    ]),
+  });
+}
+
+function loadStats() {
+  let raw;
+  try {
+    raw = fs.readFileSync(STATS_FILE, "utf8");
+  } catch {
+    // No file yet is the normal first run, not an error.
+    return;
+  }
+
+  try {
+    const d = JSON.parse(raw);
+    if (!d || d.v !== 1) return;
+    stats.startedAt = d.startedAt || stats.startedAt;
+    stats.pairings = d.pairings || 0;
+    stats.dictations = d.dictations || 0;
+    stats.submits = d.submits || 0;
+    stats.charsRelayed = d.charsRelayed || 0;
+    stats.seen = new Map(
+      (d.seen || []).map(([key, s]) => [
+        key,
+        { first: s.first, last: s.last, days: new Set(s.days || []), dictations: s.dictations || 0 },
+      ])
+    );
+  } catch {
+    // A truncated or corrupt file must not stop the relay from serving.
+    console.log("event=stats_load_failed");
+  }
+}
+
+let saveTimer = null;
+
+function saveStatsNow() {
+  saveTimer = null;
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    // Write then rename, so a crash mid-write cannot leave a corrupt file
+    // where a week of retention data used to be.
+    const tmp = STATS_FILE + ".tmp";
+    fs.writeFileSync(tmp, encodeStats());
+    fs.renameSync(tmp, STATS_FILE);
+    persistence = CONFIGURED_DIR ? "disk" : "ephemeral";
+  } catch {
+    persistence = "memory";
+  }
+}
+
+// Every dictation would otherwise mean a write. Coalesce them.
+function saveStats() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(saveStatsNow, 5000);
+  saveTimer.unref();
+}
+
+loadStats();
+saveStatsNow(); // establishes whether the directory is actually writable
+
+for (const sig of ["SIGTERM", "SIGINT"]) {
+  process.on(sig, () => {
+    // Render sends SIGTERM on redeploy; this is the flush that matters.
+    saveStatsNow();
+    process.exit(0);
+  });
+}
+
 function tag(room) {
   return crypto.createHash("sha256").update("sotto:" + room).digest("hex").slice(0, 12);
 }
@@ -84,6 +183,7 @@ function note(room, kind, size) {
 
   if (kind === "install") {
     console.log(`event=install user=${key}`);
+    saveStats();
     return;
   }
 
@@ -95,6 +195,8 @@ function note(room, kind, size) {
   } else if (kind === "submit") {
     stats.submits++;
   }
+
+  saveStats();
 }
 
 // A laptop parked on a long poll is present by definition — that held request
@@ -254,6 +356,14 @@ const server = http.createServer(async (req, res) => {
         : 0,
       returningUsers: retained,
       activeRooms: rooms.size,
+      // "disk" = a configured volume, survives redeploys.
+      // "ephemeral" = writable but no SOTTO_DATA_DIR, so the next deploy wipes
+      //   it and d7 can never accumulate.
+      // "memory" = not even writable.
+      // Anything other than "disk" during the pilot means the number this
+      // pilot exists to produce is not being collected.
+      persistence,
+      collectingSince: new Date(stats.startedAt).toISOString().slice(0, 10),
     });
     return;
   }

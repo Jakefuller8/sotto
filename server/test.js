@@ -6,6 +6,9 @@
 
 const { spawn } = require("child_process");
 const { webcrypto } = require("crypto");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 const subtle = webcrypto.subtle;
 
 const PORT = 39413;
@@ -455,8 +458,87 @@ async function main() {
     server.kill();
   }
 
+  await survivesRestart();
+
   console.log(`\n${passed} passed, ${failed} failed\n`);
   process.exit(failed ? 1 : 0);
+}
+
+// The counters exist to produce returningUsers.d7, which needs a week of
+// history across many deploys. Source-level checks cannot prove that, so this
+// runs two server generations against one data directory and asserts the
+// numbers cross the gap.
+async function survivesRestart() {
+  console.log("\nCounters survive a restart");
+
+  const PORT2 = 39414;
+  const BASE2 = `http://127.0.0.1:${PORT2}`;
+  const dir = path.join(
+    os.tmpdir(),
+    "sotto-stats-test-" + Date.now() + "-" + Math.random().toString(16).slice(2)
+  );
+
+  function boot() {
+    const p = spawn("node", ["server.js"], {
+      cwd: __dirname,
+      env: { ...process.env, PORT: String(PORT2), SOTTO_DATA_DIR: dir },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    p.stdout.on("data", () => {});
+    p.stderr.on("data", () => {});
+    return p;
+  }
+
+  async function stats() {
+    const r = await fetch(`${BASE2}/stats`, { cache: "no-store" });
+    return r.json();
+  }
+
+  let first = boot();
+  try {
+    await sleep(700);
+
+    // A dictation and its done marker, the same shape the phone sends.
+    await fetch(`${BASE2}/say?room=PRS234`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ iv: "AA", ct: "BB" }),
+    });
+
+    const before = await stats();
+    ok("a configured data directory reports disk", before.persistence === "disk",
+      before.persistence);
+    ok("activity is counted", before.dictations > 0, JSON.stringify(before.dictations));
+
+    // SIGTERM is what Render sends on redeploy, so flush-on-exit is the path
+    // that actually matters here.
+    first.kill("SIGTERM");
+    await sleep(600);
+    first = null;
+
+    const second = boot();
+    try {
+      await sleep(700);
+      const after = await stats();
+
+      ok("dictations survive a restart", after.dictations === before.dictations,
+        `${before.dictations} -> ${after.dictations}`);
+      ok("unique users survive a restart", after.uniqueUsers === before.uniqueUsers,
+        `${before.uniqueUsers} -> ${after.uniqueUsers}`);
+      // Without this, every deploy would restart the retention window at zero.
+      ok("the collection start date is preserved",
+        after.collectingSince === before.collectingSince,
+        `${before.collectingSince} -> ${after.collectingSince}`);
+    } finally {
+      second.kill();
+    }
+  } catch (err) {
+    failed++;
+    console.log("  FAIL  restart harness threw — " + err.message);
+  } finally {
+    if (first) first.kill();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 main();

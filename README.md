@@ -117,8 +117,21 @@ Room codes are SHA-256 hashed before they touch a counter or a log line. No
 transcript, plaintext or ciphertext is ever logged or persisted. Logs are of the
 form `event=dictation user=<hash> size=<n>`.
 
-Counters are in memory, so they reset on redeploy or sleep. Fine for a pilot; for
-anything longer, write events to a real store.
+Counters are written to `SOTTO_DATA_DIR/stats.json` — atomically, and flushed
+on SIGTERM so a redeploy does not lose them.
+
+**Attach a Render disk and set `SOTTO_DATA_DIR` to its mount path**, or this
+does nothing useful: Render's filesystem is writable without a disk, so the
+write succeeds and is then wiped on the next deploy. `/stats` reports which
+state you are in as `persistence`:
+
+| value | meaning |
+|---|---|
+| `disk` | configured volume, survives redeploys |
+| `ephemeral` | writable, but the next deploy wipes it |
+| `memory` | not writable at all |
+
+Anything other than `disk` means `returningUsers.d7` cannot accumulate.
 
 **The number that matters is `returningUsers.d7`.** Downloads measure curiosity.
 Day-7 return measures whether you have a product.
