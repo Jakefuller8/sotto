@@ -23,7 +23,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const VERSION = "1.0.0";
+const VERSION = "1.0.1";
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, "public");
 
@@ -322,11 +322,24 @@ const server = http.createServer(async (req, res) => {
       json(res, 400, { error: "bad room" });
       return;
     }
-    const r = rooms.get(id);
+
+    // A device that identifies itself with ?role= is checking in, not just
+    // asking. Without this the phone would only ever register presence during
+    // its initial pairing POST, and would appear to vanish 12 seconds later
+    // even while sitting open on screen.
+    const role = url.searchParams.get("role");
     const now = Date.now();
+    const r = role === "phone" || role === "laptop" ? room(id) : rooms.get(id);
+
+    if (r) {
+      if (role === "phone") r.lastSay = now;
+      else if (role === "laptop") r.lastPoll = now;
+    }
+
     json(res, 200, {
       laptop: !!r && now - r.lastPoll < PRESENCE_MS,
       phone: !!r && now - r.lastSay < PRESENCE_MS,
+      paired: !!r && !!r.pub.laptop && !!r.pub.phone,
     });
     return;
   }
