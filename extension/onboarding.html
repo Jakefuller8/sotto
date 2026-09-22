@@ -38,6 +38,7 @@
   }
   .sasnote { color: var(--dim); font-size: 13px; margin: 6px 0 0; }
 
+
   ol { text-align: left; color: var(--dim); font-size: 14px; padding-left: 22px; margin: 22px 0 0; }
   ol li { margin: 7px 0; }
 
@@ -55,6 +56,13 @@
     font: 12px ui-monospace, Menlo, monospace; color: var(--signal);
   }
   .privacy { margin: 26px 0 0; font-size: 13px; color: var(--dim); text-align: center; line-height: 1.6; }
+
+  button.ghost {
+    display: block; margin: 18px auto 0; padding: 8px 14px;
+    background: none; color: var(--dim); border: 1px solid var(--edge);
+    border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  button.ghost:hover { color: var(--fg); }
 </style>
 </head>
 <body>
@@ -86,6 +94,8 @@
         No camera handy? Open this on your phone:
         <code id="link"></code>
       </div>
+
+      <button class="ghost" id="repair">Re-pair with a new code</button>
     </div>
 
     <p class="privacy">Your speech is transcribed on your phone and encrypted before it leaves.<br>The relay passes along text it has no key to read.</p>

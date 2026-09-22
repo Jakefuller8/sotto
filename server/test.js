@@ -93,8 +93,13 @@ async function main() {
     ok("health reports ok", health.status === 200 && health.body.ok === true);
     ok("health identifies as sotto", health.body.name === "sotto",
       JSON.stringify(health.body));
-    ok("health reports version 1.2.0", health.body.version === "1.2.0",
-      `got ${health.body.version}`);
+    // Asserted against package.json rather than a literal, so a version bump
+    // can't leave this test behind — and so the two version sites are pinned
+    // to each other. They drifted apart once already (package.json said 1.0.1
+    // while the relay served 1.2.0), which is how a stale build went unnoticed.
+    const pkgVersion = require("./package.json").version;
+    ok(`health reports version ${pkgVersion}`, health.body.version === pkgVersion,
+      `got ${health.body.version}, package.json says ${pkgVersion}`);
 
     const home = await get("/");
     ok("serves the phone page", home.status === 200 && home.text.includes("Hold to talk"));

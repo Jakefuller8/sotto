@@ -12,6 +12,7 @@ const els = {
   sasNote: document.getElementById("sasNote"),
   openChat: document.getElementById("openChat"),
   link: document.getElementById("link"),
+  repair: document.getElementById("repair"),
 };
 
 const MESSAGES = {
@@ -21,6 +22,12 @@ const MESSAGES = {
   "no-tab": ["waiting", "Paired — now open a chat tab"],
   ready: ["paired", "Paired and encrypted"],
 };
+
+// A wrong code and a phone that simply isn't open yet produce the same
+// "no-phone" stage, so after a grace period we name the code instead of
+// leaving both devices waiting on each other indefinitely.
+const ABSENT_GRACE_MS = 8000;
+let absentSince = 0;
 
 function drawQR(url) {
   try {
@@ -48,7 +55,18 @@ async function probe() {
   const [tone, text] = MESSAGES[s.stage] || MESSAGES["no-relay"];
 
   els.dot.dataset.s = tone;
-  els.status.textContent = text;
+
+  if (s.stage === "no-phone") {
+    if (!absentSince) absentSince = Date.now();
+    els.status.textContent =
+      Date.now() - absentSince < ABSENT_GRACE_MS
+        ? text
+        : "Still waiting — scan the code above with your phone's camera";
+  } else {
+    absentSince = 0;
+    els.status.textContent = text;
+  }
+
   showSas(s.sas);
 
   if (s.stage === "pairing") await SottoPair.pair(false).catch(() => {});
@@ -61,13 +79,33 @@ async function probe() {
   }
 }
 
-async function start() {
+async function render() {
   const cfg = await SottoPair.config();
   const url = SottoPair.phoneUrl(cfg.relay, cfg.room);
 
   els.link.textContent = url;
   drawQR(url);
+  return cfg;
+}
 
+els.repair.addEventListener("click", async () => {
+  els.repair.disabled = true;
+  els.status.textContent = "Generating a new code…";
+  absentSince = 0;
+  showSas(null);
+  try {
+    // reset() publishes a fresh key to the relay; that network call can fail
+    // while the new code is still valid locally, so render either way.
+    await SottoPair.reset().catch(() => {});
+    await render();
+  } finally {
+    els.repair.disabled = false;
+  }
+  probe();
+});
+
+async function start() {
+  await render();
   await SottoPair.pair(false).catch(() => {});
   probe();
   setInterval(probe, 2500);

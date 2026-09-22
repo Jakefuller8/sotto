@@ -19,6 +19,8 @@
   .sas { font:20px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing:.2em; color:var(--live); }
   .sas.pending { color:var(--dim); }
   .cap { font-size:11px; color:var(--dim); }
+  .hint { font-size:11px; color:var(--dim); margin-top:6px; line-height:1.45; }
+  .hint:empty { display:none; }
   button { width:100%; border:0; border-radius:8px; padding:9px; font:inherit; font-size:13px;
     font-weight:500; cursor:pointer; background:var(--raised); color:var(--fg); margin-top:9px; }
   button.primary { background:var(--signal); color:#fff; }
@@ -37,6 +39,8 @@
     <span class="dot" id="dot"></span>
     <span id="status">Checking…</span>
   </div>
+
+  <div class="hint" id="hint"></div>
 
   <div class="sasbox">
     <div class="sas pending" id="sas">····</div>

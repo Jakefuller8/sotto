@@ -50,7 +50,7 @@ const SottoPair = (function () {
     const stored = await chrome.storage.local.get(["relay", "room", "installId"]);
     const patch = {};
     if (!stored.relay) patch.relay = RELAY;
-    if (!/^[A-Z2-9]{6}$/.test(stored.room || "")) patch.room = newCode();
+    if (!/^[A-HJ-NP-Z2-9]{6}$/.test(stored.room || "")) patch.room = newCode();
     if (!stored.installId) patch.installId = newInstallId();
     if (Object.keys(patch).length) await chrome.storage.local.set(patch);
     return { ...stored, ...patch };

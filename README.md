@@ -210,7 +210,8 @@ so gating on it without an exit would leave a stuck user with nowhere to go.
 - **No pill in the top-right of the chat page** — reload the tab. Content scripts only inject on page load.
 - **"Sotto offline"** — wrong relay address, or the instance is asleep. Open `/health` to wake it.
 - **"Sotto: open the app on your phone"** — not paired yet. Open the phone app.
-- **"Sotto: pairing expired"** — the shared key is stale. Popup → Advanced → **Re-pair with a new code**.
-- **Pill says ready, no text** — you didn't click into the chat box.
+- **"Sotto: pairing expired"** — the shared key is stale. Popup → **Set up or re-pair** → **Re-pair with a new code**.
+- **"Laptop not connected" / "Phone not connected"** — the two devices ended up on different pairing codes. Scan the laptop's QR again; that always fixes it. Not a security problem — only a mismatched *safety number* is. (Each device's code is in its own settings if you need it for support.)
+- **Pill says ready, no text** — the extension focuses the prompt box itself, so you shouldn't need to click into it first. If nothing lands, the site has probably reshipped its UI and the selectors in `content.js` need updating. Clicking into the box is a useful workaround meanwhile, since a focused editable element is preferred over the selector search.
 - **Safety numbers differ** — re-pair with a new code before dictating anything sensitive.
 - **Phone shows no grey preview** — wrong browser (Safari on iPhone, Chrome on Android) or mic denied.

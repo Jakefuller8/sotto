@@ -10,12 +10,14 @@ summer internship, so speed to a testable product matters more than polish.
 
 ## Current state
 
-Working end to end and tested on real devices. Version 1.2.0, live in
-production as of 2026-09-21.
+Version 1.3.0, deployed 2026-09-21. `/health` reports `"version":"1.3.0"`.
+The version-mismatch blocker that dominated this file is resolved — see *The
+upload trap* below for why it happened and how to avoid re-creating it.
 
-`/health` reports `"version":"1.2.0"`. The version-mismatch blocker that
-dominated this file is resolved — see *The upload trap* below for why it
-happened and how to avoid re-creating it.
+**1.3.0 has not been through a real-device pass yet.** 1.2.0 was verified end
+to end on real hardware; 1.3.0 changes pairing-code resolution and the phone's
+status messaging, and both test suites cover it, but nobody has held the phone
+and dictated into a chat box on this build. Do that before the pilot.
 
 **Live relay:** https://sotto-relay.onrender.com (Render). **Tier is
 unconfirmed** — check the dashboard before any pilot. Free sleeps after 15
@@ -106,6 +108,39 @@ and a hosted QR API would leak the pairing code to a third party. Validated
 against ISO/IEC 18004 format strings, byte-mode capacities and Reed-Solomon
 syndromes in `extension/qr.test.js`.
 
+**The phone does not auto-follow the laptop's pairing code.** The tempting
+version is a `/whereis?id=<installId>` endpoint the phone consults to find
+where the laptop went. Don't build that one.
+
+Note what is *not* the objection: `installId` already exists and is already
+sent to the relay on every presence poll, and the relay already stores it per
+room and keys analytics off it (`note()`, so that a re-pair doesn't read as a
+new user). The privacy policy already discloses per-device counting. A
+`/whereis` endpoint adds almost no privacy surface.
+
+The objection is that such a redirect is **unauthenticated**. It hands a
+malicious relay a new capability: tell the phone "your laptop moved to room X"
+at a moment of the attacker's choosing, where X is the attacker's room. The
+phone does a fresh ECDH with the attacker and streams plaintext. Today an
+attacker must swap keys *during* a user-initiated pairing — a narrow window
+that coincides with the screen showing the safety number. A silent migration
+has no verification moment by construction, which is exactly what made it
+attractive.
+
+If this is ever worth building, the sound design is **key continuity**, not a
+lookup: before moving to room B, the laptop posts `AES-GCM(K_A, "move to B")`
+into room A. AES-GCM is authenticated, so only a holder of the already-verified
+`K_A` can produce it and the relay cannot forge it. Trust chains back to the
+pairing the user checked.
+
+Its limit, and the reason it is not built: it requires the laptop to still hold
+`K_A`, so it cannot help when extension storage is lost (new extension id,
+reinstall, cleared data) — which is the most common way the codes diverge. It
+also needs the phone to persist its AES key, which it currently does not
+(`aesKey` is in memory only). Until there is evidence that rescanning is a real
+source of friction, a visible one-action recovery beats a new security-sensitive
+code path.
+
 **Streaming replaces rather than appends.** The phone sends the whole current
 utterance every ~180ms because the recogniser revises interim words. The
 extension only ever deletes characters it can *prove* are its own — it checks
@@ -118,9 +153,14 @@ duplicated phrase, never eating the user's own words. Do not weaken this check.
 ## Testing
 
 ```bash
-cd server && npm test           # 68 assertions, no dependencies needed
+cd server && npm test           # 88 assertions, no dependencies needed
 cd extension && node qr.test.js # 25 assertions against ISO reference values
 ```
+
+`npm test` runs `room.test.js` (pairing-code resolution, 20 assertions) before
+`test.js` (the relay, 68). `room.test.js` pulls `roomFromUrl()` out of
+`index.html` and runs it directly rather than copying it, so the test cannot
+drift from the shipped page.
 
 Both suites are green as of 2026-09-21 (68/68 and 25/25). Requires Node; the
 engine floor is `>=22`.
@@ -153,6 +193,21 @@ including a genuine ECDH + AES-GCM round trip using Node's WebCrypto.
    reconnects were refused. (WebSocket era.)
 5. **Streamed chunks each counted as a dictation**, inflating analytics. A
    `{done:true}` marker now counts one per utterance.
+6. **A pairing-code mismatch was an unrecoverable dead end.** The QR carries
+   the code in the URL, but the installed PWA launches at `start_url` (`/`)
+   with no fragment, so the phone fell back to its cached code. If the laptop's
+   code had changed — a deliberate re-pair, cleared storage, or a reinstall —
+   the two sat on different codes and both showed only "waiting", never naming
+   the code or suggesting a fix. The phone now accepts `?room=` as well as
+   `#room`, and after 8 seconds both sides name the code instead of waiting
+   silently. Covered by `server/room.test.js`.
+7. **Code validators accepted `I` and `O`**, which the generator alphabet
+   deliberately omits so they cannot be confused with `1` and `0`. A mistyped
+   code passed validation and then silently never matched. All six validation
+   sites now use `[A-HJ-NP-Z2-9]`.
+8. **`SottoPair.reset()` was unreachable.** The README documented "Re-pair with
+   a new code" as the fix for a stale pairing, but nothing in the UI called it.
+   It is now a button on the onboarding page.
 
 ---
 
@@ -184,7 +239,8 @@ including a genuine ECDH + AES-GCM round trip using Node's WebCrypto.
    upload zip; `manifest.json` must sit at the zip root
 3. Confirm Render is on Starter, not Free
 
-*Done: 1.2.0 pushed and verified live on 2026-09-21.*
+*Done 2026-09-21: 1.2.0 pushed and verified live, then 1.3.0 fixing the
+pairing-code dead end (bugs 6–8 above).*
 
 **After approval:**
 

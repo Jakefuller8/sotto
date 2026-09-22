@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sotto",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Speak quietly into your phone and the text appears in your AI chat box, encrypted end to end.",
   "permissions": [
     "storage"

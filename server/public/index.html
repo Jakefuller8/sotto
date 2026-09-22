@@ -129,6 +129,13 @@
   .note { font-size: 13px; color: var(--warn); padding-top: 8px; line-height: 1.5; }
   .note:empty { display: none; }
 
+  .pairhint { font-size: 13px; color: var(--dim); padding-top: 8px; line-height: 1.5; }
+  .pairhint:empty { display: none; }
+  .pairhint code {
+    font: 13px ui-monospace, Menlo, monospace; color: var(--fg);
+    letter-spacing: .12em;
+  }
+
   .sheet {
     position: fixed; inset: 0;
     background: var(--ink);
@@ -189,23 +196,6 @@
   }
   .install-go[hidden] { display: none; }
 
-  .gate {
-    position: fixed; inset: 0; background: var(--ink); z-index: 20;
-    display: none; flex-direction: column; justify-content: center;
-    padding: calc(env(safe-area-inset-top) + 28px) 26px calc(env(safe-area-inset-bottom) + 28px);
-    overflow-y: auto;
-  }
-  .gate[data-open="true"] { display: flex; }
-  .gate-icon { margin-bottom: 20px; }
-  .gate h2 { font-size: 21px; font-weight: 500; margin: 0 0 10px; }
-  .gate p { margin: 0 0 22px; color: var(--dim); font-size: 15px; line-height: 1.55; }
-  .gate ol { margin: 0; padding-left: 22px; color: var(--fg); font-size: 15px; line-height: 1.85; }
-  .gate ol strong { font-weight: 600; }
-  .gate .skip {
-    margin-top: 30px; background: none; border: 0; color: var(--dim);
-    font: inherit; font-size: 13px; text-decoration: underline; padding: 8px 0;
-    align-self: flex-start;
-  }
 </style>
 </head>
 <body>
@@ -223,6 +213,7 @@
 </main>
 
 <div class="note" id="note"></div>
+<div class="pairhint" id="pairhint"></div>
 
 <button class="talk" id="talk" disabled>
   Hold to talk
@@ -237,25 +228,6 @@
   <span id="lock" class="lock"></span>
 </footer>
 
-<div class="gate" id="gate">
-  <div class="gate-inner">
-    <div class="gate-icon">
-      <svg viewBox="0 0 48 48" width="52" height="52" aria-hidden="true">
-        <rect x="13" y="4" width="22" height="40" rx="4" fill="none" stroke="#4ec78f" stroke-width="2"/>
-        <path d="M24 30V16" stroke="#4ec78f" stroke-width="2" stroke-linecap="round"/>
-        <path d="M19 21l5-5 5 5" fill="none" stroke="#4ec78f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </div>
-    <h2>Add Sotto to your home screen</h2>
-    <p>Sotto runs as an app, so it opens instantly and stays paired. One-time setup.</p>
-    <ol id="gateSteps">
-      <li>Tap the <strong>Share</strong> button at the bottom of Safari</li>
-      <li>Scroll down and tap <strong>Add to Home Screen</strong></li>
-      <li>Tap <strong>Add</strong>, then open Sotto from your home screen</li>
-    </ol>
-    <button class="skip" id="skip">Continue in the browser instead</button>
-  </div>
-</div>
 
 <div class="install" id="install" hidden>
   <div class="install-head">
@@ -325,12 +297,27 @@
     sheet: document.getElementById("sheet"),
     closeSheet: document.getElementById("closeSheet"),
     room: document.getElementById("room"),
-    sas: document.getElementById("sas")
+    sas: document.getElementById("sas"),
+    pairhint: document.getElementById("pairhint")
   };
 
-  var room = (location.hash.slice(1) || localStorage.getItem("sotto.room") || newCode())
-    .toUpperCase().replace(/[^A-Z2-9]/g, "").slice(0, 6);
-  if (room.length !== 6) room = newCode();
+  // A scanned link always wins over the cached code, and both spellings are
+  // accepted: "/#ABC123" and "/?room=ABC123". The hash is what the QR uses,
+  // but a hash is easy to lose — some link handlers and share sheets drop it,
+  // and the installed PWA launches at start_url with no fragment at all.
+  function roomFromUrl() {
+    var m = /[?&]room=([^&]+)/.exec(location.search);
+    return m ? decodeURIComponent(m[1]) : location.hash.slice(1);
+  }
+
+  var scanned = roomFromUrl()
+    .toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g, "").slice(0, 6);
+  var cached = (localStorage.getItem("sotto.room") || "")
+    .toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g, "").slice(0, 6);
+
+  var room = scanned.length === 6 ? scanned
+    : cached.length === 6 ? cached
+    : newCode();
 
   els.room.value = room;
   els.autosend.checked = localStorage.getItem("sotto.autosend") === "1";
@@ -435,14 +422,35 @@
 
   // ---- presence ---------------------------------------------------------
 
+  // How long the laptop may be absent before we stop saying "waiting" and
+  // start naming the room. A wrong code looks exactly like a laptop that
+  // isn't open yet, and the old copy said "Waiting for laptop" forever —
+  // both devices sat blaming each other with the codes never shown.
+  var ABSENT_GRACE_MS = 8000;
+  var absentSince = 0;
+
   function checkPresence() {
     fetch("/presence?room=" + encodeURIComponent(room) + "&role=phone", { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.laptop) {
-          setStatus("waiting", "Waiting for laptop");
+          if (!absentSince) absentSince = Date.now();
+          if (Date.now() - absentSince < ABSENT_GRACE_MS) {
+            setStatus("waiting", "Waiting for laptop");
+            els.pairhint.textContent = "";
+          } else {
+            // One instruction, one action. The laptop is always showing a QR
+            // when this happens, so rescanning is the only recovery a user
+            // should ever be asked for. The code itself stays in Settings for
+            // support, deliberately out of the main screen.
+            setStatus("waiting", "Laptop not connected");
+            els.pairhint.textContent =
+              "Scan the code on your laptop again to reconnect.";
+          }
           return;
         }
+        absentSince = 0;
+        els.pairhint.textContent = "";
         if (!aesKey) {
           setStatus("waiting", "Pairing");
           pair();
@@ -607,7 +615,7 @@
   }
 
   els.room.addEventListener("change", function () {
-    var next = els.room.value.toUpperCase().replace(/[^A-Z2-9]/g, "").slice(0, 6);
+    var next = els.room.value.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g, "").slice(0, 6);
     if (next.length !== 6) {
       els.room.value = room;
       return;
@@ -615,6 +623,9 @@
     room = next;
     els.room.value = room;
     els.sas.textContent = "····";
+    aesKey = null;
+    absentSince = 0;
+    els.pairhint.textContent = "";
     persist();
     pair().then(checkPresence);
   });
@@ -626,38 +637,18 @@
   els.gear.addEventListener("click", function () { els.sheet.dataset.open = "true"; });
   els.closeSheet.addEventListener("click", function () { els.sheet.dataset.open = "false"; });
 
-  // ---- home screen gate --------------------------------------------------
-  // Running as an installed app keeps the pairing stable and makes Sotto feel
-  // like a real app rather than a page. The escape hatch matters though: "Add
-  // to Home Screen" lives in a share sheet we don't control, and a user who
-  // can't find it must not be stuck with no way forward.
-
-  function installed() {
-    return (
-      window.navigator.standalone === true ||
-      window.matchMedia("(display-mode: standalone)").matches ||
-      window.matchMedia("(display-mode: fullscreen)").matches ||
-      localStorage.getItem("sotto.skipinstall") === "1"
-    );
-  }
-
-  var gate = document.getElementById("gate");
-  var isAndroid = /Android/i.test(navigator.userAgent);
-
-  if (!installed()) {
-    if (isAndroid) {
-      document.getElementById("gateSteps").innerHTML =
-        "<li>Tap the <strong>\u22ee</strong> menu in Chrome</li>" +
-        "<li>Tap <strong>Add to Home screen</strong>, then <strong>Install</strong></li>" +
-        "<li>Open Sotto from your home screen</li>";
-    }
-    gate.dataset.open = "true";
-  }
-
-  document.getElementById("skip").addEventListener("click", function () {
-    localStorage.setItem("sotto.skipinstall", "1");
-    gate.dataset.open = "false";
-  });
+  // ---- home screen install -----------------------------------------------
+  // Installing to the home screen genuinely helps \u2014 an installed app keeps the
+  // pairing stable and is less likely to be evicted than a Safari tab \u2014 but it
+  // must not be a wall in front of a first-time user.
+  //
+  // This used to be a full-screen gate shown on first load, so a new user
+  // scanning the QR was made to do a multi-step iOS share-sheet ritual before
+  // hearing a single word transcribed. The dismissible banner further down
+  // already implements the right pattern: it holds back until the user has
+  // actually dictated something, so the first thing they meet is the product
+  // rather than an upsell. The gate made that banner unreachable on a first
+  // visit. Ask after the value has landed, not before.
 
   // ---- speech ------------------------------------------------------------
 

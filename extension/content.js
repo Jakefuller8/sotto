@@ -407,7 +407,7 @@
 
     for (;;) {
       const room = config.room;
-      if (!/^[A-Z2-9]{6}$/.test(room)) {
+      if (!/^[A-HJ-NP-Z2-9]{6}$/.test(room)) {
         showPill("Sotto not set up", "dead", true);
         await new Promise((r) => setTimeout(r, 3000));
         continue;

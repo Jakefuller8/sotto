@@ -9,6 +9,7 @@ const els = {
   relay: document.getElementById("relay"),
   room: document.getElementById("room"),
   save: document.getElementById("save"),
+  hint: document.getElementById("hint"),
 };
 
 const MESSAGES = {
@@ -19,11 +20,27 @@ const MESSAGES = {
   ready: ["ok", "Ready · encrypted"],
 };
 
+// "no-phone" covers both "not open yet" and "open, but on a different code".
+// Naming the code after a grace period is what lets a user tell those apart.
+const ABSENT_GRACE_MS = 8000;
+let absentSince = 0;
+
 async function tick() {
   const s = await SottoPair.status();
   const [tone, text] = MESSAGES[s.stage] || MESSAGES["no-relay"];
   els.dot.dataset.s = tone;
   els.status.textContent = s.stage === "ready" ? `${text} · v${s.version}` : text;
+
+  if (s.stage === "no-phone") {
+    if (!absentSince) absentSince = Date.now();
+    if (Date.now() - absentSince >= ABSENT_GRACE_MS) {
+      els.status.textContent = "Phone not connected";
+      els.hint.textContent = "Tap Set up or re-pair, then scan the code again.";
+    }
+  } else {
+    absentSince = 0;
+    els.hint.textContent = "";
+  }
 
   if (s.sas) {
     els.sas.textContent = s.sas;
@@ -44,7 +61,7 @@ els.setup.addEventListener("click", () => {
 
 els.save.addEventListener("click", async () => {
   const relay = SottoPair.host(els.relay.value) || SottoPair.RELAY;
-  const room = els.room.value.toUpperCase().replace(/[^A-Z2-9]/g, "").slice(0, 6);
+  const room = els.room.value.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g, "").slice(0, 6);
   if (room.length !== 6) {
     els.status.textContent = "Code must be 6 characters";
     return;
