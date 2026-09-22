@@ -160,6 +160,52 @@
     background: var(--raised); color: var(--fg); font: inherit; font-size: 15px;
   }
   .lock { color: var(--live); font-size: 13px; }
+
+  .install {
+    position: fixed;
+    left: 14px; right: 14px;
+    bottom: calc(env(safe-area-inset-bottom) + 14px);
+    background: var(--raised);
+    border: 1px solid var(--edge);
+    border-radius: 14px;
+    padding: 15px 16px;
+    z-index: 9;
+  }
+  .install[hidden] { display: none; }
+  .install-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .install strong { font-size: 15px; font-weight: 500; }
+  .install p { margin: 8px 0 0; font-size: 13px; line-height: 1.55; color: var(--dim); }
+  .install .share {
+    display: inline-block; padding: 1px 6px; border: 1px solid var(--edge);
+    border-radius: 5px; color: var(--fg); font-size: 12px;
+  }
+  .install .x {
+    background: none; border: 0; color: var(--dim);
+    font-size: 22px; line-height: 1; padding: 0 2px; cursor: pointer;
+  }
+  .install-go {
+    width: 100%; margin: 12px 0 0; padding: 11px; border: 0; border-radius: 9px;
+    background: var(--signal); color: #fff; font: inherit; font-size: 15px; font-weight: 500;
+  }
+  .install-go[hidden] { display: none; }
+
+  .gate {
+    position: fixed; inset: 0; background: var(--ink); z-index: 20;
+    display: none; flex-direction: column; justify-content: center;
+    padding: calc(env(safe-area-inset-top) + 28px) 26px calc(env(safe-area-inset-bottom) + 28px);
+    overflow-y: auto;
+  }
+  .gate[data-open="true"] { display: flex; }
+  .gate-icon { margin-bottom: 20px; }
+  .gate h2 { font-size: 21px; font-weight: 500; margin: 0 0 10px; }
+  .gate p { margin: 0 0 22px; color: var(--dim); font-size: 15px; line-height: 1.55; }
+  .gate ol { margin: 0; padding-left: 22px; color: var(--fg); font-size: 15px; line-height: 1.85; }
+  .gate ol strong { font-weight: 600; }
+  .gate .skip {
+    margin-top: 30px; background: none; border: 0; color: var(--dim);
+    font: inherit; font-size: 13px; text-decoration: underline; padding: 8px 0;
+    align-self: flex-start;
+  }
 </style>
 </head>
 <body>
@@ -190,6 +236,35 @@
   </label>
   <span id="lock" class="lock"></span>
 </footer>
+
+<div class="gate" id="gate">
+  <div class="gate-inner">
+    <div class="gate-icon">
+      <svg viewBox="0 0 48 48" width="52" height="52" aria-hidden="true">
+        <rect x="13" y="4" width="22" height="40" rx="4" fill="none" stroke="#4ec78f" stroke-width="2"/>
+        <path d="M24 30V16" stroke="#4ec78f" stroke-width="2" stroke-linecap="round"/>
+        <path d="M19 21l5-5 5 5" fill="none" stroke="#4ec78f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h2>Add Sotto to your home screen</h2>
+    <p>Sotto runs as an app, so it opens instantly and stays paired. One-time setup.</p>
+    <ol id="gateSteps">
+      <li>Tap the <strong>Share</strong> button at the bottom of Safari</li>
+      <li>Scroll down and tap <strong>Add to Home Screen</strong></li>
+      <li>Tap <strong>Add</strong>, then open Sotto from your home screen</li>
+    </ol>
+    <button class="skip" id="skip">Continue in the browser instead</button>
+  </div>
+</div>
+
+<div class="install" id="install" hidden>
+  <div class="install-head">
+    <strong>Add Sotto to your home screen?</strong>
+    <button class="x" id="installNo" aria-label="Dismiss">&times;</button>
+  </div>
+  <p id="installIos">Tap <span class="share">Share</span> at the bottom of Safari, then <strong>Add to Home Screen</strong>. It opens fullscreen, like an app.</p>
+  <button class="install-go" id="installGo" hidden>Install</button>
+</div>
 
 <div class="sheet" id="sheet">
   <h2>Sotto</h2>
@@ -361,7 +436,7 @@
   // ---- presence ---------------------------------------------------------
 
   function checkPresence() {
-    fetch("/presence?room=" + encodeURIComponent(room), { cache: "no-store" })
+    fetch("/presence?room=" + encodeURIComponent(room) + "&role=phone", { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.laptop) {
@@ -373,10 +448,130 @@
           pair();
           return;
         }
+        if (!d.paired) {
+          // The laptop re-paired; our key is stale.
+          aesKey = null;
+          setStatus("waiting", "Re-pairing");
+          pair();
+          return;
+        }
         setStatus("paired", "Paired");
       })
       .catch(function () {
         setStatus("off", "Can't reach relay");
+      });
+  }
+
+  // ---- streaming ---------------------------------------------------------
+  // Send the whole current utterance on every update, throttled. The laptop
+  // replaces what it wrote rather than appending, because the recogniser
+  // revises interim words as it hears more.
+
+  var utterance = null;
+  var seq = 0;
+  var lastSentText = "";
+  var lastSentAt = 0;
+  var pendingSend = null;
+  var STREAM_MS = 180;
+
+  function newUtterance() {
+    var buf = new Uint8Array(8);
+    crypto.getRandomValues(buf);
+    utterance = Array.from(buf, function (b) {
+      return b.toString(16).padStart(2, "0");
+    }).join("");
+    seq = 0;
+    lastSentText = "";
+    clearTimeout(pendingSend);
+    pendingSend = null;
+  }
+
+  function postStream(text) {
+    if (!aesKey || !utterance) return;
+    if (text === lastSentText) return;
+    lastSentText = text;
+    lastSentAt = Date.now();
+    var mySeq = ++seq;
+    var myUtt = utterance;
+
+    encrypt(text)
+      .then(function (payload) {
+        payload.stream = true;
+        payload.utt = myUtt;
+        payload.seq = mySeq;
+        return fetch("/say?room=" + encodeURIComponent(room), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      })
+      .catch(function () {});
+  }
+
+  // Throttle so a fast talker doesn't fire a request per syllable.
+  function streamUpdate(text) {
+    if (!text) return;
+    var wait = STREAM_MS - (Date.now() - lastSentAt);
+    clearTimeout(pendingSend);
+    if (wait <= 0) {
+      postStream(text);
+      return;
+    }
+    pendingSend = setTimeout(function () {
+      postStream(text);
+    }, wait);
+  }
+
+  function finishUtterance(text, alsoSubmit) {
+    clearTimeout(pendingSend);
+    pendingSend = null;
+    if (!aesKey || !utterance) return;
+
+    var myUtt = utterance;
+    var mySeq = ++seq;
+
+    function markDone() {
+      return fetch("/say?room=" + encodeURIComponent(room), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ done: true, size: text.length })
+      });
+    }
+
+    var chain;
+    if (text && text !== lastSentText) {
+      lastSentText = text;
+      chain = encrypt(text).then(function (payload) {
+        payload.stream = true;
+        payload.utt = myUtt;
+        payload.seq = mySeq;
+        return fetch("/say?room=" + encodeURIComponent(room), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      });
+    } else {
+      chain = Promise.resolve();
+    }
+
+    chain
+      .then(markDone)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.delivered === false) {
+          els.note.textContent = "Sent, but your laptop isn't listening right now.";
+        }
+        if (alsoSubmit) {
+          return fetch("/say?room=" + encodeURIComponent(room), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ submit: true })
+          });
+        }
+      })
+      .catch(function () {
+        els.note.textContent = "Couldn't reach the relay. Text not sent.";
       });
   }
 
@@ -431,6 +626,39 @@
   els.gear.addEventListener("click", function () { els.sheet.dataset.open = "true"; });
   els.closeSheet.addEventListener("click", function () { els.sheet.dataset.open = "false"; });
 
+  // ---- home screen gate --------------------------------------------------
+  // Running as an installed app keeps the pairing stable and makes Sotto feel
+  // like a real app rather than a page. The escape hatch matters though: "Add
+  // to Home Screen" lives in a share sheet we don't control, and a user who
+  // can't find it must not be stuck with no way forward.
+
+  function installed() {
+    return (
+      window.navigator.standalone === true ||
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.matchMedia("(display-mode: fullscreen)").matches ||
+      localStorage.getItem("sotto.skipinstall") === "1"
+    );
+  }
+
+  var gate = document.getElementById("gate");
+  var isAndroid = /Android/i.test(navigator.userAgent);
+
+  if (!installed()) {
+    if (isAndroid) {
+      document.getElementById("gateSteps").innerHTML =
+        "<li>Tap the <strong>\u22ee</strong> menu in Chrome</li>" +
+        "<li>Tap <strong>Add to Home screen</strong>, then <strong>Install</strong></li>" +
+        "<li>Open Sotto from your home screen</li>";
+    }
+    gate.dataset.open = "true";
+  }
+
+  document.getElementById("skip").addEventListener("click", function () {
+    localStorage.setItem("sotto.skipinstall", "1");
+    gate.dataset.open = "false";
+  });
+
   // ---- speech ------------------------------------------------------------
 
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -474,6 +702,7 @@
         else partialText += chunk;
       }
       render();
+      streamUpdate((finalText + " " + partialText).trim());
     };
 
     r.onerror = function (ev) {
@@ -509,6 +738,8 @@
     render();
     meter(true);
 
+    newUtterance();
+
     if (!recog) recog = build();
     try {
       lastStart = Date.now();
@@ -528,8 +759,9 @@
       partialText = "";
       render();
       if (!text) return;
-      sendText(text, els.autosend.checked);
+      finishUtterance(text, els.autosend.checked);
       if (navigator.vibrate) navigator.vibrate(12);
+      if (window.sottoOfferInstall) window.sottoOfferInstall();
     }, 350);
   }
 
@@ -566,6 +798,63 @@
   if ("wakeLock" in navigator) {
     navigator.wakeLock.request("screen").catch(function () {});
   }
+
+  // ---- install prompt ----------------------------------------------------
+  // Android fires beforeinstallprompt and gets a real one-tap install. iOS has
+  // no such API — Apple never implemented it — so there we can only show the
+  // Add to Home Screen steps.
+
+  (function installPrompt() {
+    var card = document.getElementById("install");
+    var dismiss = document.getElementById("installNo");
+    var go = document.getElementById("installGo");
+    var iosText = document.getElementById("installIos");
+    if (!card) return;
+
+    var standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.navigator.standalone === true;
+
+    if (standalone || localStorage.getItem("sotto.installDismissed") === "1") {
+      return;
+    }
+
+    var deferred = null;
+    window.addEventListener("beforeinstallprompt", function (ev) {
+      ev.preventDefault();
+      deferred = ev;
+      iosText.textContent = "Install it for a fullscreen app with its own icon.";
+      go.hidden = false;
+    });
+
+    dismiss.addEventListener("click", function () {
+      card.hidden = true;
+      localStorage.setItem("sotto.installDismissed", "1");
+    });
+
+    go.addEventListener("click", function () {
+      if (!deferred) return;
+      deferred.prompt();
+      deferred.userChoice.then(function () {
+        card.hidden = true;
+        localStorage.setItem("sotto.installDismissed", "1");
+        deferred = null;
+      });
+    });
+
+    // Hold it back until they have actually dictated something, so the first
+    // thing they meet is the product rather than an upsell.
+    window.sottoOfferInstall = function () {
+      if (card.hidden === false) return;
+      if (localStorage.getItem("sotto.installDismissed") === "1") return;
+      card.hidden = false;
+    };
+
+    window.addEventListener("appinstalled", function () {
+      card.hidden = true;
+      localStorage.setItem("sotto.installDismissed", "1");
+    });
+  })();
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(function () {});

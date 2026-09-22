@@ -93,6 +93,8 @@ async function main() {
     ok("health reports ok", health.status === 200 && health.body.ok === true);
     ok("health identifies as sotto", health.body.name === "sotto",
       JSON.stringify(health.body));
+    ok("health reports version 1.2.0", health.body.version === "1.2.0",
+      `got ${health.body.version}`);
 
     const home = await get("/");
     ok("serves the phone page", home.status === 200 && home.text.includes("Hold to talk"));
@@ -263,6 +265,107 @@ async function main() {
     await pending;
     const elapsed = Date.now() - t0;
     ok("long poll returns promptly once text arrives", elapsed < 1500, `${elapsed}ms`);
+
+    console.log("\nPresence check-in (regression)");
+    // The phone used to register presence only during its initial pairing POST,
+    // so it looked absent 12s later even while open. A role= param is a check-in.
+    let pres = await get("/presence?room=CHK234");
+    ok("a bare presence query registers nobody",
+      pres.body.phone === false && pres.body.laptop === false);
+
+    await get("/presence?room=CHK234&role=phone");
+    pres = await get("/presence?room=CHK234");
+    ok("phone check-in marks the phone present", pres.body.phone === true,
+      JSON.stringify(pres.body));
+    ok("phone check-in does not fake a laptop", pres.body.laptop === false);
+
+    await get("/presence?room=CHK234&role=laptop");
+    pres = await get("/presence?room=CHK234");
+    ok("laptop check-in marks the laptop present", pres.body.laptop === true);
+
+    for (let i = 0; i < 3; i++) {
+      await sleep(120);
+      await get("/presence?room=CHK234&role=phone");
+    }
+    pres = await get("/presence?room=CHK234");
+    ok("repeated check-ins keep presence alive", pres.body.phone === true);
+
+    ok("presence reports whether both keys are published",
+      (await get("/presence?room=PAIR23")).body.paired === true,
+      JSON.stringify((await get("/presence?room=PAIR23")).body));
+    ok("presence reports unpaired rooms as unpaired",
+      (await get("/presence?room=CHK234")).body.paired === false);
+
+    ok("an unknown role is ignored rather than trusted",
+      (await get("/presence?room=XYZ234&role=hacker")).body.phone === false);
+
+    console.log("\nInstall-based retention");
+    // Retention must track installs, not pairing codes — otherwise anyone who
+    // re-pairs is counted as a brand new user and day-7 return is understated.
+    const before = (await get("/stats")).body.uniqueUsers;
+
+    await get("/poll?room=INS234&id=abc123def456abc1");
+    await sleep(120);
+    await post("/say?room=INS234", { iv: "i", ct: "one" });
+    await sleep(80);
+
+    // Same install, brand new pairing code — should NOT look like a new user.
+    await get("/poll?room=INS999&id=abc123def456abc1");
+    await sleep(120);
+    await post("/say?room=INS999", { iv: "i", ct: "two" });
+    await sleep(80);
+
+    const after = (await get("/stats")).body.uniqueUsers;
+    ok("re-pairing does not inflate the user count", after - before === 1,
+      `grew by ${after - before}`);
+
+    await get("/poll?room=OTH234&id=zzz999zzz999zzz9");
+    await sleep(120);
+    await post("/say?room=OTH234", { iv: "i", ct: "three" });
+    await sleep(80);
+    const third = (await get("/stats")).body.uniqueUsers;
+    ok("a genuinely different install counts separately", third - after === 1,
+      `grew by ${third - after}`);
+
+    ok("rejects a malformed install id",
+      (await get("/poll?room=BAD234&id=" + "x".repeat(200))).status === 200);
+    ok("install ids never appear in stats",
+      !JSON.stringify((await get("/stats")).body).includes("abc123def456abc1"));
+    ok("install ids are hashed in logs",
+      serverOut.includes("event=install") && !serverOut.includes("abc123def456abc1"));
+
+    console.log("\nStreamed chunks");
+    // Streaming sends each finalized phrase as it lands, then a done marker.
+    // Chunks must relay but not each count as a separate dictation.
+    const dictBefore = (await get("/stats")).body.dictations;
+
+    let streamPoll = get("/poll?room=STR234");
+    await sleep(120);
+    await post("/say?room=STR234", { iv: "i1", ct: "piece one", chunk: true });
+    const firstChunk = await streamPoll;
+    ok("a chunk is relayed immediately",
+      firstChunk.body.messages[0].ct === "piece one",
+      JSON.stringify(firstChunk.body));
+
+    streamPoll = get("/poll?room=STR234");
+    await sleep(120);
+    await post("/say?room=STR234", { iv: "i2", ct: "piece two", chunk: true });
+    ok("later chunks relay too",
+      (await streamPoll).body.messages[0].ct === "piece two");
+
+    const midway = (await get("/stats")).body.dictations;
+    ok("chunks do not each count as a dictation", midway === dictBefore,
+      `${dictBefore} -> ${midway}`);
+
+    const doneRes = await post("/say?room=STR234", { done: true, size: 42 });
+    ok("the done marker is accepted", doneRes.status === 200);
+    ok("done counts exactly one dictation",
+      (await get("/stats")).body.dictations === dictBefore + 1);
+
+    const drainAfterDone = await get("/poll?room=STR234");
+    ok("the done marker queues no text for the laptop",
+      drainAfterDone.body.messages.length === 0,
+      JSON.stringify(drainAfterDone.body));
 
     console.log("\nAnalytics");
     const stats = await get("/stats");

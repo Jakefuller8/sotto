@@ -4,88 +4,57 @@
 <meta charset="utf-8">
 <style>
   :root {
-    --ink: #14161b; --raised: #1e222a; --edge: #2b303a;
-    --fg: #e9edf3; --dim: #8a94a2; --live: #4ec78f;
-    --signal: #3d7bf7; --warn: #dfa33e;
+    --ink:#14161b; --raised:#1e222a; --edge:#2b303a;
+    --fg:#e9edf3; --dim:#8a94a2; --live:#4ec78f; --signal:#3d7bf7; --warn:#dfa33e;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; width: 300px; padding: 18px;
-    background: var(--ink); color: var(--fg);
-    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  }
-  h1 { margin: 0 0 3px; font-size: 16px; font-weight: 500; }
-  .tagline { color: var(--dim); font-size: 12px; margin-bottom: 15px; }
-  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 15px; color: var(--dim); font-size: 13px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; }
-  .dot[data-state="paired"] { background: var(--live); }
-  .dot[data-state="waiting"] { background: var(--warn); }
-
-  .step { border: 1px solid var(--edge); border-radius: 10px; padding: 13px; margin-bottom: 11px; }
-  .step h2 { margin: 0 0 7px; font-size: 12px; font-weight: 600; color: var(--dim); }
-  .step p { margin: 0 0 9px; font-size: 13px; color: var(--dim); }
-
-  a.link {
-    display: block; background: var(--raised); border: 1px solid var(--edge);
-    border-radius: 8px; padding: 9px 10px; color: var(--signal);
-    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
-    word-break: break-all; text-decoration: none;
-  }
-  button {
-    width: 100%; border: 0; border-radius: 8px; padding: 9px;
-    font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
-    background: var(--raised); color: var(--fg); margin-top: 7px;
-  }
-  button.primary { background: var(--signal); color: #fff; }
-
-  .sas {
-    font: 22px ui-monospace, SFMono-Regular, Menlo, monospace;
-    letter-spacing: .2em; color: var(--live); text-align: center; padding: 3px 0;
-  }
-  .pending { color: var(--dim); }
-  details { margin-top: 12px; }
-  summary { color: var(--dim); font-size: 12px; cursor: pointer; }
-  input {
-    width: 100%; background: var(--raised); border: 1px solid var(--edge);
-    border-radius: 7px; color: var(--fg); padding: 8px 9px; font: inherit;
-    font-size: 12px; margin-top: 7px;
-  }
-  input:focus { outline: none; border-color: var(--signal); }
-  .foot { color: var(--dim); font-size: 11px; margin-top: 13px; line-height: 1.5; }
+  * { box-sizing:border-box; }
+  body { margin:0; width:292px; padding:17px; background:var(--ink); color:var(--fg);
+    font:14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  h1 { margin:0 0 14px; font-size:15px; font-weight:500; }
+  .row { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--dim); }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--dim); flex:none; }
+  .dot[data-s="ok"] { background:var(--live); }
+  .dot[data-s="wait"] { background:var(--warn); }
+  .sasbox { text-align:center; margin:16px 0 4px; }
+  .sas { font:20px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing:.2em; color:var(--live); }
+  .sas.pending { color:var(--dim); }
+  .cap { font-size:11px; color:var(--dim); }
+  button { width:100%; border:0; border-radius:8px; padding:9px; font:inherit; font-size:13px;
+    font-weight:500; cursor:pointer; background:var(--raised); color:var(--fg); margin-top:9px; }
+  button.primary { background:var(--signal); color:#fff; }
+  details { margin-top:14px; }
+  summary { color:var(--dim); font-size:12px; cursor:pointer; }
+  input { width:100%; background:var(--raised); border:1px solid var(--edge); border-radius:7px;
+    color:var(--fg); padding:8px 9px; font:inherit; font-size:12px; margin-top:8px; }
+  input:focus { outline:none; border-color:var(--signal); }
+  .foot { color:var(--dim); font-size:11px; margin-top:13px; line-height:1.5; }
 </style>
 </head>
 <body>
   <h1>Sotto</h1>
-  <div class="tagline">Speak quietly. Text lands on your laptop.</div>
 
   <div class="row">
     <span class="dot" id="dot"></span>
     <span id="status">Checking…</span>
   </div>
 
-  <div class="step">
-    <h2>1 · Open on your phone</h2>
-    <p>Tap this on your phone, then add it to your home screen.</p>
-    <a class="link" id="phoneLink" href="#" target="_blank"></a>
-    <button id="copy">Copy link</button>
+  <div class="sasbox">
+    <div class="sas pending" id="sas">····</div>
+    <div class="cap">Safety number — must match your phone</div>
   </div>
 
-  <div class="step">
-    <h2>2 · Check the safety number</h2>
-    <p>These four characters should match what your phone shows.</p>
-    <div class="sas pending" id="sas">····</div>
-  </div>
+  <button class="primary" id="setup">Set up or re-pair</button>
 
   <details>
     <summary>Advanced</summary>
     <input id="relay" placeholder="relay host" autocomplete="off" spellcheck="false">
     <input id="room" maxlength="6" placeholder="pairing code" autocomplete="off" spellcheck="false">
     <button id="save">Save</button>
-    <button id="reset">Re-pair with a new code</button>
   </details>
 
-  <div class="foot">Your speech is transcribed on your phone and encrypted before it leaves. The relay can't read it.</div>
+  <div class="foot">Transcribed on your phone, encrypted before it leaves. The relay can't read it.</div>
 
+  <script src="pair.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

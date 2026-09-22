@@ -249,7 +249,7 @@
 
   // ---- polling loop ------------------------------------------------------
 
-  let config = { relay: RELAY, room: "" };
+  let config = { relay: RELAY, room: "", installId: "" };
   let started = false;
   let backoff = 1000;
 
@@ -258,9 +258,111 @@
     return "https://" + host;
   }
 
+  // ---- live streaming ----------------------------------------------------
+  // The phone sends the whole current utterance on each update, because the
+  // speech recogniser revises its interim guesses. To show text as it is
+  // spoken we must therefore replace what we wrote a moment ago.
+  //
+  // The safety rule: only ever delete characters we can PROVE are ours, by
+  // checking the text immediately before the caret still equals exactly what
+  // we last inserted. If the user typed in the box, moved the caret, or the
+  // page reflowed, that check fails and we append instead of deleting. The
+  // worst case is a duplicated phrase — never eating the user's own words.
+
+  let stream = { utt: null, written: "", seq: -1 };
+
+  function resetStream() {
+    stream = { utt: null, written: "", seq: -1 };
+  }
+
+  // Extends the selection backwards over n characters and returns what it
+  // covers, or null if the selection could not be formed.
+  function selectBack(box, n) {
+    if (!box.isContentEditable) {
+      const end = box.selectionStart;
+      if (end == null || end < n) return null;
+      const covered = box.value.slice(end - n, end);
+      box.setSelectionRange(end - n, end);
+      return covered;
+    }
+
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    if (typeof sel.modify !== "function") return null;
+
+    sel.collapseToEnd();
+    for (let i = 0; i < n; i++) sel.modify("extend", "backward", "character");
+    return sel.toString();
+  }
+
+  function collapseToEnd(box) {
+    if (box.isContentEditable) {
+      const sel = window.getSelection();
+      if (sel) sel.collapseToEnd();
+    } else if (box.selectionEnd != null) {
+      box.setSelectionRange(box.selectionEnd, box.selectionEnd);
+    }
+  }
+
+  function writeStreaming(text) {
+    const box = findBox();
+    if (!box) return false;
+    box.focus();
+
+    // Nothing written yet for this utterance: a plain insert.
+    if (!stream.written) {
+      // insert() may prepend a separating space; written tracks only our own
+      // text, which is what selectBack must match later.
+      if (!insert(text)) return false;
+      stream.written = text;
+      return true;
+    }
+
+    // Cheap path: the new text simply extends what we already wrote.
+    if (text.startsWith(stream.written)) {
+      const delta = text.slice(stream.written.length);
+      if (!delta) return true;
+      collapseToEnd(box);
+      try {
+        document.execCommand("insertText", false, delta);
+      } catch {
+        return false;
+      }
+      stream.written = text;
+      return true;
+    }
+
+    // The recogniser revised earlier words, so we need to replace ours.
+    const covered = selectBack(box, stream.written.length);
+    if (covered !== stream.written) {
+      // Not provably our text. Abandon replacement and append instead.
+      collapseToEnd(box);
+      const delta = text.startsWith(stream.written)
+        ? text.slice(stream.written.length)
+        : " " + text;
+      try {
+        document.execCommand("insertText", false, delta);
+      } catch {
+        return false;
+      }
+      stream.written = text;
+      return true;
+    }
+
+    try {
+      document.execCommand("insertText", false, text);
+    } catch {
+      collapseToEnd(box);
+      return false;
+    }
+    stream.written = text;
+    return true;
+  }
+
   async function handle(messages) {
     for (const msg of messages) {
       if (msg.type === "submit") {
+        resetStream();
         submit();
         continue;
       }
@@ -274,7 +376,26 @@
         toast("Couldn't decrypt — re-pair from the Sotto popup", true);
         continue;
       }
-      if (!insert(text)) {
+
+      if (!msg.stream) {
+        resetStream();
+        if (!insert(text)) toast("Click into the chat box first", true);
+        continue;
+      }
+
+      // New utterance: start fresh so we never try to replace text belonging
+      // to a previous dictation.
+      if (msg.utt !== stream.utt) {
+        stream = { utt: msg.utt, written: "", seq: -1 };
+      }
+
+      // Updates can arrive out of order; a stale one would rewind the text.
+      if (typeof msg.seq === "number") {
+        if (msg.seq <= stream.seq) continue;
+        stream.seq = msg.seq;
+      }
+
+      if (!writeStreaming(text)) {
         toast("Click into the chat box first", true);
       }
     }
@@ -293,9 +414,13 @@
       }
 
       try {
-        const res = await fetch(`${base()}/poll?room=${encodeURIComponent(room)}`, {
-          cache: "no-store",
-        });
+        const idParam = config.installId
+          ? `&id=${encodeURIComponent(config.installId)}`
+          : "";
+        const res = await fetch(
+          `${base()}/poll?room=${encodeURIComponent(room)}${idParam}`,
+          { cache: "no-store" }
+        );
         if (!res.ok) throw new Error("status " + res.status);
         const data = await res.json();
         backoff = 1000;
@@ -309,9 +434,10 @@
     }
   }
 
-  chrome.storage.local.get(["relay", "room", "aesJwk"], async (stored) => {
+  chrome.storage.local.get(["relay", "room", "aesJwk", "installId"], async (stored) => {
     config.relay = stored.relay || RELAY;
     config.room = (stored.room || "").toUpperCase();
+    config.installId = stored.installId || "";
     await loadKey(stored.aesJwk);
     loop();
   });
@@ -320,11 +446,12 @@
     if (area !== "local") return;
     if (changes.relay) config.relay = changes.relay.newValue || RELAY;
     if (changes.room) config.room = (changes.room.newValue || "").toUpperCase();
+    if (changes.installId) config.installId = changes.installId.newValue || "";
     if (changes.aesJwk) await loadKey(changes.aesJwk.newValue);
   });
 
   // Exposed for extension/test-page.html, which exercises insertion against a
   // mock chat box without a relay. Content scripts run in an isolated world, so
   // this is not reachable from page scripts in normal use.
-  window.__sottoTest = { insert, submit };
+  window.__sottoTest = { insert, submit, writeStreaming, resetStream, streamState: () => stream };
 })();

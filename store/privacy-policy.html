@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto — Privacy Policy</title>
+<style>
+  body {
+    max-width: 680px; margin: 0 auto; padding: 48px 24px 80px;
+    font: 16px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #1a1d22; background: #fff;
+  }
+  h1 { font-size: 28px; font-weight: 500; margin: 0 0 4px; }
+  h2 { font-size: 19px; font-weight: 500; margin: 38px 0 10px; }
+  .date { color: #6b7280; margin: 0 0 32px; }
+  p, li { color: #2c3138; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 15px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #e5e7eb; }
+  th { font-weight: 500; color: #6b7280; }
+  a { color: #2563eb; }
+  strong { font-weight: 500; }
+  .lede { background: #f3f7f4; border-radius: 10px; padding: 18px 20px; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<h1>Sotto — Privacy Policy</h1>
+<p class="date">Last updated: 21 September 2026</p>
+
+<p>Sotto lets you speak quietly into your phone and have the text appear in an AI chat box on your laptop. This policy explains exactly what happens to your words.</p>
+
+<h2>The short version</h2>
+<div class="lede">
+<p>Your speech is turned into text on your phone. That text is encrypted on your phone before it is sent, and decrypted only in your browser. The server that passes it between your devices has no key and cannot read it.</p>
+<p style="margin-bottom:0">We do not sell data. We do not show ads. We do not build advertising profiles.</p>
+</div>
+
+<h2>What we handle, and what we don't</h2>
+<p><strong>Dictated text.</strong> Encrypted on your phone using AES-GCM with a key derived on your own devices via an ECDH key exchange. The relay server forwards ciphertext it cannot decrypt. It is never written to disk, never logged, and is deleted from memory as soon as your laptop collects it — or within 30 minutes if your laptop never does.</p>
+
+<p><strong>Audio.</strong> Never transmitted to us and never stored anywhere by Sotto. Speech recognition runs through your phone browser's built-in engine. On iPhone, Safari may send audio to Apple for processing under <a href="https://www.apple.com/legal/privacy/">Apple's privacy policy</a>; on Android, Chrome may send audio to Google under <a href="https://policies.google.com/privacy">Google's privacy policy</a>. That processing is between you and those companies. Sotto neither receives nor retains audio.</p>
+
+<p><strong>Pairing keys.</strong> Your devices exchange ECDH public keys through the relay. Public keys alone cannot decrypt anything. Private keys never leave your devices.</p>
+
+<p><strong>Usage counts.</strong> We keep aggregate counters: how many dictations happen, their approximate length, and how many distinct devices are in use. Pairing codes are hashed with SHA-256 before they appear in any counter or log line, so a count cannot be traced back to a specific person. We do not log text, audio, IP addresses, or any content.</p>
+
+<p><strong>What we never collect:</strong> your name, email address, phone number, contacts, location, browsing history, or the contents of the pages you visit.</p>
+
+<h2>What the extension can access</h2>
+<ul>
+  <li><strong>Storage</strong> — to keep your pairing code and encryption key on your own device.</li>
+  <li><strong>Access to our relay address only</strong> — to receive your dictated text. It cannot read or send data to any other website.</li>
+</ul>
+<p>The extension runs on claude.ai, chatgpt.com, gemini.google.com, aistudio.google.com and perplexity.ai, where it does one thing: place your dictated text into the message box. It does not read your conversations, your chat history, or anything else on those pages.</p>
+
+<h2>Third parties</h2>
+<p>Our relay is hosted on <a href="https://render.com">Render</a>, which processes network traffic on our behalf under its own privacy terms. Because the text is encrypted before it reaches the relay, Render cannot read it either.</p>
+<p>We use no analytics services, no trackers, no advertising networks, and no third-party cookies.</p>
+
+<h2>Retention</h2>
+<table>
+  <tr><th>Data</th><th>Kept for</th></tr>
+  <tr><td>Encrypted text awaiting pickup</td><td>Until collected, or 30 minutes</td></tr>
+  <tr><td>Pairing public keys</td><td>30 minutes after last activity</td></tr>
+  <tr><td>Aggregate usage counters</td><td>Until the server restarts</td></tr>
+  <tr><td>Your pairing code and key</td><td>On your devices, until you re-pair or uninstall</td></tr>
+</table>
+
+<h2>Your control</h2>
+<p>Remove everything at any time: uninstall the extension, and delete the Sotto page from your phone's home screen and browser data. That erases your keys and pairing code. Nothing identifiable about you remains on our side, because we never had it.</p>
+<p>Re-pairing from the extension's Advanced menu generates fresh keys and immediately invalidates the old ones.</p>
+
+<h2>Verifying these claims</h2>
+<p>The safety number shown on both your phone and your laptop is a fingerprint of your shared encryption key. If the two match, no one — including us — has intercepted the key exchange. If they ever differ, re-pair before dictating anything sensitive.</p>
+
+<h2>Children</h2>
+<p>Sotto is not directed at children under 13 and we do not knowingly collect information from them.</p>
+
+<h2>Changes</h2>
+<p>If this policy changes materially, the date at the top will change and the updated version will be posted at this address.</p>
+
+<h2>Contact</h2>
+<p>Questions about privacy: <strong>[YOUR EMAIL ADDRESS]</strong></p>
+</body>
+</html>

@@ -23,7 +23,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const VERSION = "1.0.1";
+const VERSION = "1.2.0";
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, "public");
 
@@ -66,7 +66,10 @@ function today() {
 }
 
 function note(room, kind, size) {
-  const key = tag(room);
+  const r = rooms.get(room);
+  // Prefer the extension's install id so re-pairing doesn't look like a new
+  // user. Falls back to the room code before the laptop has checked in.
+  const key = r && r.installId ? tag(r.installId) : tag(room);
   let s = stats.seen.get(key);
   if (!s) {
     s = { first: today(), last: today(), days: new Set(), dictations: 0 };
@@ -75,6 +78,11 @@ function note(room, kind, size) {
   }
   s.last = today();
   s.days.add(today());
+
+  if (kind === "install") {
+    console.log(`event=install user=${key}`);
+    return;
+  }
 
   if (kind === "dictation") {
     s.dictations++;
@@ -95,6 +103,7 @@ function room(id) {
       lastPoll: 0,
       lastSay: 0,
       pub: { laptop: null, phone: null },
+      installId: null,
       created: Date.now(),
     };
     rooms.set(id, r);
@@ -254,6 +263,16 @@ const server = http.createServer(async (req, res) => {
     const r = room(id);
     r.lastPoll = Date.now();
 
+    const installId = url.searchParams.get("id");
+    if (installId && /^[A-Za-z0-9_-]{8,64}$/.test(installId)) {
+      // Assign before recording, or note() still sees a null installId and
+      // keys the event on the room code — which is the thing we're trying to
+      // stop counting.
+      const firstSighting = !r.installId;
+      r.installId = installId;
+      if (firstSighting) note(id, "install");
+    }
+
     if (r.queue.length) {
       const batch = r.queue.splice(0, r.queue.length);
       json(res, 200, { messages: batch });
@@ -298,14 +317,29 @@ const server = http.createServer(async (req, res) => {
     if (body.submit === true) {
       r.queue.push({ type: "submit" });
       note(id, "submit");
+    } else if (body.done === true) {
+      // End-of-utterance marker. Carries no text; it exists so a streamed
+      // dictation counts once rather than once per chunk.
+      note(id, "dictation", Number(body.size) || 0);
+      json(res, 200, { ok: true, delivered: Date.now() - r.lastPoll < PRESENCE_MS });
+      return;
     } else if (typeof body.iv === "string" && typeof body.ct === "string") {
       if (body.ct.length > MAX_BODY) {
         json(res, 413, { error: "too long" });
         return;
       }
       // Opaque to us. We never see the key.
-      r.queue.push({ type: "text", iv: body.iv, ct: body.ct });
-      note(id, "dictation", body.ct.length);
+      r.queue.push({
+        type: "text",
+        iv: body.iv,
+        ct: body.ct,
+        // Streaming metadata. Opaque routing hints; the relay does not
+        // interpret them beyond passing them along.
+        stream: body.stream === true || undefined,
+        utt: typeof body.utt === "string" ? body.utt.slice(0, 24) : undefined,
+        seq: Number.isFinite(body.seq) ? body.seq : undefined,
+      });
+      if (body.chunk !== true) note(id, "dictation", body.ct.length);
     } else {
       json(res, 400, { error: "nothing to say" });
       return;

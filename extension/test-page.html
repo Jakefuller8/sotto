@@ -99,6 +99,15 @@
     return { ok: api.insert(msg.text) };
   }
 
+  function moveCaretToEnd(el) {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
   function reset() {
     box.innerHTML = "";
     box.blur();
@@ -172,6 +181,78 @@
     box.innerText.includes("visibility check") && hidden.innerText === "",
     "picked the hidden node instead");
   hidden.remove();
+
+  reset();
+
+
+  console.log("streaming");
+
+  function startUtterance() {
+    api.resetStream();
+  }
+
+  reset();
+  box.focus();
+  startUtterance();
+  api.writeStreaming("the quick");
+  check("streams a first partial phrase", box.innerText.trim() === "the quick",
+    JSON.stringify(box.innerText));
+
+  api.writeStreaming("the quick brown");
+  check("extends without duplicating", box.innerText.trim() === "the quick brown",
+    JSON.stringify(box.innerText));
+
+  api.writeStreaming("the quick brown fox jumps");
+  check("keeps extending", box.innerText.trim() === "the quick brown fox jumps",
+    JSON.stringify(box.innerText));
+
+  api.writeStreaming("the quick brown dog jumped");
+  check("replaces revised words rather than appending",
+    box.innerText.trim() === "the quick brown dog jumped",
+    JSON.stringify(box.innerText));
+
+  reset();
+  box.focus();
+  startUtterance();
+  api.writeStreaming("hello there");
+  api.writeStreaming("hello world");
+  check("handles a revision of the final word",
+    box.innerText.trim() === "hello world", JSON.stringify(box.innerText));
+
+  reset();
+  box.textContent = "My own typing. ";
+  box.focus();
+  moveCaretToEnd(box);
+  startUtterance();
+  api.writeStreaming("dictated text");
+  check("preserves text the user typed first",
+    box.innerText.includes("My own typing."), JSON.stringify(box.innerText));
+  api.writeStreaming("dictated words");
+  check("revision does not eat the user's typing",
+    box.innerText.includes("My own typing."), JSON.stringify(box.innerText));
+  check("and the revision still applied",
+    box.innerText.includes("dictated words"), JSON.stringify(box.innerText));
+
+  reset();
+  box.focus();
+  startUtterance();
+  api.writeStreaming("first utterance");
+  startUtterance();
+  api.writeStreaming("second utterance");
+  check("a new utterance appends instead of replacing the last one",
+    box.innerText.includes("first utterance") &&
+      box.innerText.includes("second utterance"),
+    JSON.stringify(box.innerText));
+
+  reset();
+  box.focus();
+  startUtterance();
+  api.writeStreaming("streamed so far");
+  send({ type: "insert", text: "non-streamed" });
+  check("a plain insert after streaming appends cleanly",
+    box.innerText.includes("streamed so far") &&
+      box.innerText.includes("non-streamed"),
+    JSON.stringify(box.innerText));
 
   reset();
 
