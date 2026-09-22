@@ -277,6 +277,15 @@
 
   <p id="sasHelp">If these four characters differ from your laptop's, someone may be intercepting. Re-pair with a new code.</p>
 
+  <div class="field">
+    <span>Quiet mode</span>
+    <label class="toggle" style="color:var(--fg);font-size:14px">
+      <input type="checkbox" id="quiet">
+      Keep the mic ready between sentences
+    </label>
+    <p class="stepnote">iOS plays a chime whenever it starts listening, and no app can silence it. Keeping the mic ready means it chimes <b>once when you start</b> instead of on every sentence. The trade: the mic stays open during pauses, and iOS sends that audio to Apple to transcribe. Turn this off and you get a chime per sentence but the mic closes immediately.</p>
+  </div>
+
   <div class="field" id="homeScreenHelp">
     <span>Add Sotto to your home screen</span>
     <ol class="steps" id="homeScreenSteps">
@@ -340,6 +349,7 @@
     sas: document.getElementById("sas"),
     pairhint: document.getElementById("pairhint"),
     diag: document.getElementById("diag"),
+    quiet: document.getElementById("quiet"),
     homeScreenHelp: document.getElementById("homeScreenHelp"),
     homeScreenSteps: document.getElementById("homeScreenSteps")
   };
@@ -908,6 +918,17 @@
     localStorage.setItem("sotto.autosend", els.autosend.checked ? "1" : "0");
   });
 
+  els.quiet.checked = quietMode();
+  els.quiet.addEventListener("change", function () {
+    localStorage.setItem("sotto.quiet", els.quiet.checked ? "1" : "0");
+    // Apply at once rather than after the next release, so the effect of the
+    // switch is immediately audible.
+    if (!els.quiet.checked && !held) {
+      clearTimeout(idleTimer);
+      try { if (recog) recog.stop(); } catch (e) {}
+    }
+  });
+
   els.gear.addEventListener("click", function () {
     renderDiag();
     els.sheet.dataset.open = "true";
@@ -958,7 +979,31 @@
   // Web Speech streams audio to Apple for recognition — so a longer idle
   // window means more ambient audio leaves the phone. That is why this is
   // short rather than generous.
-  var IDLE_STOP_MS = 10000;
+  // How long the session is kept alive after you release. This is the whole
+  // chime story: iOS chimes on every start(), so a window longer than the gaps
+  // between your sentences means one chime when you begin a writing session
+  // and silence thereafter. At 10s it was shorter than the natural pauses, so
+  // it kept dying and restarting — which read as "sometimes it beeps,
+  // sometimes it doesn't", worse than a predictable beep.
+  //
+  // Three minutes covers the pauses in real dictation. The cost is an open
+  // microphone during those pauses, and on iOS Web Speech streams audio to
+  // Apple, so this is a genuine trade — exposed as a setting rather than
+  // decided here. closeMic() still shuts it instantly on backgrounding.
+  var IDLE_STOP_LONG_MS = 180000;
+  var IDLE_STOP_SHORT_MS = 1500;
+
+  function idleStopMs() {
+    return quietMode() ? IDLE_STOP_LONG_MS : IDLE_STOP_SHORT_MS;
+  }
+
+  function quietMode() {
+    try {
+      return localStorage.getItem("sotto.quiet") !== "0";
+    } catch (e) {
+      return true;
+    }
+  }
   var live = false;
   var idleTimer = null;
   var baseIndex = 0;
@@ -1067,7 +1112,7 @@
     idleTimer = setTimeout(function () {
       if (held) return;
       try { recog.stop(); } catch (e) {}
-    }, IDLE_STOP_MS);
+    }, idleStopMs());
 
     setTimeout(function () {
       var text = (finalText + " " + partialText).trim();

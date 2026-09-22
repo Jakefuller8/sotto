@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sotto — chime test</title>
+<style>
+  :root {
+    --ink:#14161b; --raised:#1e222a; --edge:#2b303a;
+    --fg:#e9edf3; --dim:#8a94a2; --live:#4ec78f; --signal:#3d7bf7; --warn:#dfa33e;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body {
+    margin:0; background:var(--ink); color:var(--fg);
+    font:16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding:calc(env(safe-area-inset-top) + 20px) 18px calc(env(safe-area-inset-bottom) + 28px);
+    -webkit-user-select:none; user-select:none;
+  }
+  h1 { font-size:20px; font-weight:500; margin:0 0 6px; }
+  .sub { color:var(--dim); font-size:14px; margin:0 0 22px; }
+  .card {
+    background:var(--raised); border:1px solid var(--edge); border-radius:14px;
+    padding:16px; margin:0 0 14px;
+  }
+  .card h2 { font-size:15px; font-weight:600; margin:0 0 4px; }
+  .card p { font-size:13px; color:var(--dim); margin:0 0 12px; line-height:1.5; }
+  button {
+    width:100%; border:0; border-radius:10px; padding:14px;
+    font:inherit; font-size:15px; font-weight:500; color:#fff; background:var(--signal);
+  }
+  button:disabled { background:var(--ink); color:var(--dim); border:1px solid var(--edge); }
+  .rate { display:flex; gap:8px; margin:10px 0 0; }
+  .rate button { background:var(--ink); border:1px solid var(--edge); color:var(--fg); font-size:13px; padding:9px; }
+  .rate button.on { background:var(--live); color:#14161b; border-color:var(--live); }
+  .log {
+    font:11px ui-monospace, Menlo, monospace; color:var(--dim);
+    white-space:pre-wrap; word-break:break-word; margin:16px 0 0;
+    -webkit-user-select:text; user-select:text;
+  }
+  .note { font-size:13px; color:var(--warn); line-height:1.5; margin:16px 0 0; }
+</style>
+</head>
+<body>
+
+<h1>Can the chime be quietened?</h1>
+<p class="sub">Each test starts a 3-second dictation session a different way. Rate how loud the chime was. Volume up, phone off silent, no headphones — we want the worst case.</p>
+
+<div class="card">
+  <h2>A — Plain start</h2>
+  <p>The baseline. What Sotto does today.</p>
+  <button data-mode="plain">Run A</button>
+  <div class="rate" data-for="plain"></div>
+</div>
+
+<div class="card">
+  <h2>B — With a silent audio track playing</h2>
+  <p>Holds an audio session open first. On some systems that makes the OS duck or reroute its own alert sounds.</p>
+  <button data-mode="silent">Run B</button>
+  <div class="rate" data-for="silent"></div>
+</div>
+
+<div class="card">
+  <h2>C — With a near-silent tone playing</h2>
+  <p>Like B, but a real (almost inaudible) tone through Web Audio, which is a stronger claim on the audio session.</p>
+  <button data-mode="tone">Run C</button>
+  <div class="rate" data-for="tone"></div>
+</div>
+
+<div class="card">
+  <h2>D — Mic opened first, then recognition</h2>
+  <p>Takes the microphone with getUserMedia before starting recognition, so the input route is already established.</p>
+  <button data-mode="gum">Run D</button>
+  <div class="rate" data-for="gum"></div>
+</div>
+
+<p class="note" id="verdict"></p>
+<div class="log" id="log"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var logEl = document.getElementById("log");
+  var verdict = document.getElementById("verdict");
+  var lines = [];
+  var scores = {};
+
+  function log(s) { lines.push(s); logEl.textContent = lines.join("\n"); }
+
+  log("ua: " + navigator.userAgent);
+  if (!SR) log("NO SpeechRecognition in this browser");
+
+  // A one-sample silent wav, enough to hold an audio session open.
+  var SILENT_WAV =
+    "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+
+  var audioEl = null;
+  var ctx = null;
+  var osc = null;
+  var stream = null;
+
+  function cleanup() {
+    if (audioEl) { try { audioEl.pause(); } catch (e) {} audioEl = null; }
+    if (osc) { try { osc.stop(); } catch (e) {} osc = null; }
+    if (ctx) { try { ctx.close(); } catch (e) {} ctx = null; }
+    if (stream) {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      stream = null;
+    }
+  }
+
+  function prepare(mode) {
+    if (mode === "silent") {
+      audioEl = new Audio(SILENT_WAV);
+      audioEl.loop = true;
+      audioEl.volume = 0.01;
+      return audioEl.play().then(function () { log("  silent track playing"); })
+        .catch(function (e) { log("  silent track blocked: " + e.name); });
+    }
+
+    if (mode === "tone") {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      osc = ctx.createOscillator();
+      var g = ctx.createGain();
+      // Low enough to be effectively inaudible, but a real signal.
+      g.gain.value = 0.0015;
+      osc.frequency.value = 80;
+      osc.connect(g);
+      g.connect(ctx.destination);
+      osc.start();
+      return ctx.resume().then(function () { log("  tone playing at gain 0.0015"); })
+        .catch(function (e) { log("  tone blocked: " + e.name); });
+    }
+
+    if (mode === "gum") {
+      return navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(function (s) { stream = s; log("  mic opened first"); })
+        .catch(function (e) { log("  mic failed: " + e.name); });
+    }
+
+    return Promise.resolve();
+  }
+
+  function run(mode, btn) {
+    if (!SR) return;
+    btn.disabled = true;
+    log("\n[" + mode + "] starting");
+
+    prepare(mode).then(function () {
+      var r = new SR();
+      r.continuous = true;
+      r.interimResults = true;
+      r.lang = navigator.language || "en-US";
+
+      r.onstart = function () { log("  onstart — listen now"); };
+      r.onerror = function (ev) { log("  error: " + ev.error); };
+      r.onend = function () {
+        log("  onend");
+        cleanup();
+        btn.disabled = false;
+      };
+
+      try { r.start(); } catch (e) {
+        log("  start threw: " + e.message);
+        cleanup();
+        btn.disabled = false;
+      }
+
+      setTimeout(function () { try { r.stop(); } catch (e) {} }, 3000);
+    });
+  }
+
+  // Rating buttons, so the comparison is recorded rather than remembered.
+  var LABELS = ["silent", "quiet", "same as A"];
+  Array.prototype.forEach.call(document.querySelectorAll(".rate"), function (box) {
+    var mode = box.getAttribute("data-for");
+    LABELS.forEach(function (label, i) {
+      var b = document.createElement("button");
+      b.textContent = label;
+      b.addEventListener("click", function () {
+        scores[mode] = label;
+        Array.prototype.forEach.call(box.children, function (c) { c.classList.remove("on"); });
+        b.classList.add("on");
+        summarise();
+      });
+      box.appendChild(b);
+    });
+  });
+
+  function summarise() {
+    var keys = Object.keys(scores);
+    if (!keys.length) return;
+    var best = keys.filter(function (k) {
+      return k !== "plain" && scores[k] !== "same as A";
+    });
+    verdict.textContent = best.length
+      ? "Promising: " + best.map(function (k) { return k + " (" + scores[k] + ")"; }).join(", ") +
+        " — tell me this and I will apply it."
+      : "No variant beat the baseline so far.";
+    log("ratings: " + JSON.stringify(scores));
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll("button[data-mode]"), function (btn) {
+    btn.addEventListener("click", function () { run(btn.getAttribute("data-mode"), btn); });
+  });
+})();
+</script>
+</body>
+</html>

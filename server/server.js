@@ -23,7 +23,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const VERSION = "1.6.0";
+const VERSION = "1.6.1";
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, "public");
 
