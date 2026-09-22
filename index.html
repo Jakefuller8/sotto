@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sotto">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#14161b">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon.svg">
+<title>Sotto</title>
+<style>
+  :root {
+    --ink: #14161b;
+    --raised: #1e222a;
+    --edge: #2b303a;
+    --fg: #e9edf3;
+    --dim: #8a94a2;
+    --live: #4ec78f;
+    --signal: #3d7bf7;
+    --warn: #dfa33e;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--ink);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+    overscroll-behavior: none;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    padding: env(safe-area-inset-top) 20px calc(env(safe-area-inset-bottom) + 18px);
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 0 0;
+    font-size: 14px;
+    color: var(--dim);
+  }
+
+  .status { display: flex; align-items: center; gap: 8px; }
+
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--dim);
+    transition: background .25s;
+    flex: none;
+  }
+  .dot[data-state="paired"] { background: var(--live); }
+  .dot[data-state="waiting"] { background: var(--warn); }
+
+  .gear {
+    background: none; border: 0; padding: 4px 0;
+    color: var(--dim); font: inherit; font-size: 13px; cursor: pointer;
+  }
+
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 0;
+    padding: 20px 0;
+  }
+
+  .transcript {
+    font-size: 21px;
+    line-height: 1.45;
+    max-height: 100%;
+    overflow-y: auto;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .transcript:empty::before {
+    content: "Hold the button and speak quietly.";
+    color: var(--dim);
+    font-size: 17px;
+  }
+  .transcript .partial { color: var(--dim); }
+
+  .talk {
+    position: relative;
+    width: 100%;
+    height: 128px;
+    border: 0;
+    border-radius: 22px;
+    background: var(--raised);
+    color: var(--fg);
+    font-size: 17px;
+    font-weight: 500;
+    transition: background .12s, transform .12s;
+    touch-action: none;
+  }
+  .talk:disabled { color: var(--dim); }
+  .talk[data-held="true"] { background: var(--signal); transform: scale(.985); }
+
+  .meter {
+    position: absolute;
+    left: 50%; bottom: 24px;
+    transform: translateX(-50%);
+    display: flex; gap: 4px;
+    height: 16px; align-items: flex-end;
+    opacity: 0; transition: opacity .2s;
+  }
+  .talk[data-held="true"] .meter { opacity: .9; }
+  .meter i { display: block; width: 3px; background: #fff; border-radius: 2px; height: 4px; }
+
+  footer {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding-top: 14px; font-size: 14px; color: var(--dim);
+  }
+  label.toggle { display: flex; align-items: center; gap: 8px; }
+  input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--signal); }
+
+  .note { font-size: 13px; color: var(--warn); padding-top: 8px; line-height: 1.5; }
+  .note:empty { display: none; }
+
+  .sheet {
+    position: fixed; inset: 0;
+    background: var(--ink);
+    padding: calc(env(safe-area-inset-top) + 24px) 22px 24px;
+    display: none;
+    flex-direction: column;
+    gap: 18px;
+    overflow-y: auto;
+    z-index: 10;
+  }
+  .sheet[data-open="true"] { display: flex; }
+  .sheet h2 { font-size: 17px; font-weight: 500; margin: 0; }
+  .sheet p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--dim); }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field span { font-size: 12px; color: var(--dim); }
+  .field input {
+    background: var(--raised); border: 1px solid var(--edge);
+    border-radius: 9px; color: var(--fg); padding: 11px 12px;
+    font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .16em; text-transform: uppercase;
+  }
+  .field input:focus { outline: none; border-color: var(--signal); }
+  .sas {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 30px; letter-spacing: .2em; color: var(--live);
+  }
+  .sheet button.close {
+    margin-top: auto; padding: 13px; border: 0; border-radius: 10px;
+    background: var(--raised); color: var(--fg); font: inherit; font-size: 15px;
+  }
+  .lock { color: var(--live); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="status">
+    <span class="dot" id="dot"></span>
+    <span id="statusText">Starting</span>
+  </div>
+  <button class="gear" id="gear">Settings</button>
+</header>
+
+<main>
+  <div class="transcript" id="transcript" aria-live="polite"></div>
+</main>
+
+<div class="note" id="note"></div>
+
+<button class="talk" id="talk" disabled>
+  Hold to talk
+  <span class="meter" id="meter"><i></i><i></i><i></i><i></i><i></i></span>
+</button>
+
+<footer>
+  <label class="toggle">
+    <input type="checkbox" id="autosend">
+    Send on release
+  </label>
+  <span id="lock" class="lock"></span>
+</footer>
+
+<div class="sheet" id="sheet">
+  <h2>Sotto</h2>
+  <p>Your speech is transcribed on this phone and encrypted before it leaves. The relay passes along text it cannot read.</p>
+
+  <div class="field">
+    <span>Pairing code — must match your laptop</span>
+    <input id="room" maxlength="6" autocomplete="off" autocorrect="off" spellcheck="false">
+  </div>
+
+  <div class="field">
+    <span>Safety number — should match the one on your laptop</span>
+    <div class="sas" id="sas">····</div>
+  </div>
+
+  <p id="sasHelp">If these four characters differ from your laptop's, someone may be intercepting. Re-pair with a new code.</p>
+
+  <button class="close" id="closeSheet">Done</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+  function newCode() {
+    var out = "", buf = new Uint8Array(6);
+    crypto.getRandomValues(buf);
+    for (var i = 0; i < 6; i++) out += ALPHABET[buf[i] % ALPHABET.length];
+    return out;
+  }
+
+  function b64(bytes) {
+    var s = "";
+    var arr = new Uint8Array(bytes);
+    for (var i = 0; i < arr.length; i++) s += String.fromCharCode(arr[i]);
+    return btoa(s);
+  }
+
+  function unb64(str) {
+    var raw = atob(str);
+    var out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+
+  var els = {
+    dot: document.getElementById("dot"),
+    statusText: document.getElementById("statusText"),
+    transcript: document.getElementById("transcript"),
+    talk: document.getElementById("talk"),
+    meter: document.getElementById("meter"),
+    autosend: document.getElementById("autosend"),
+    note: document.getElementById("note"),
+    lock: document.getElementById("lock"),
+    gear: document.getElementById("gear"),
+    sheet: document.getElementById("sheet"),
+    closeSheet: document.getElementById("closeSheet"),
+    room: document.getElementById("room"),
+    sas: document.getElementById("sas")
+  };
+
+  var room = (location.hash.slice(1) || localStorage.getItem("sotto.room") || newCode())
+    .toUpperCase().replace(/[^A-Z2-9]/g, "").slice(0, 6);
+  if (room.length !== 6) room = newCode();
+
+  els.room.value = room;
+  els.autosend.checked = localStorage.getItem("sotto.autosend") === "1";
+  persist();
+
+  var aesKey = null;
+  var myKeys = null;
+  var pairing = false;
+
+  function persist() {
+    localStorage.setItem("sotto.room", room);
+    history.replaceState(null, "", "#" + room);
+  }
+
+  function setStatus(state, text) {
+    els.dot.dataset.state = state;
+    els.statusText.textContent = text;
+  }
+
+  // ---- end-to-end encryption -------------------------------------------
+  // ECDH P-256. Each device makes a keypair, publishes only its public key,
+  // and derives the same AES-GCM key locally. The relay sees public keys and
+  // ciphertext, never the shared secret.
+
+  function freshKeys() {
+    return crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, [
+      "deriveBits"
+    ]);
+  }
+
+  function deriveWith(peerRaw) {
+    return crypto.subtle
+      .importKey("raw", peerRaw, { name: "ECDH", namedCurve: "P-256" }, false, [])
+      .then(function (peerKey) {
+        return crypto.subtle.deriveBits(
+          { name: "ECDH", public: peerKey },
+          myKeys.privateKey,
+          256
+        );
+      })
+      .then(function (bits) {
+        return crypto.subtle.digest("SHA-256", bits).then(function (hash) {
+          var h = new Uint8Array(hash);
+          // Safety number: a short fingerprint of the shared secret, shown on
+          // both devices so an active relay cannot swap keys unnoticed.
+          var sas = "";
+          for (var i = 0; i < 2; i++) {
+            sas += ALPHABET[h[i] % ALPHABET.length];
+            sas += ALPHABET[h[i + 8] % ALPHABET.length];
+          }
+          els.sas.textContent = sas;
+          return crypto.subtle.importKey("raw", bits, { name: "AES-GCM" }, false, [
+            "encrypt"
+          ]);
+        });
+      });
+  }
+
+  function pair() {
+    if (pairing) return Promise.resolve();
+    pairing = true;
+    aesKey = null;
+    els.lock.textContent = "";
+
+    return freshKeys()
+      .then(function (kp) {
+        myKeys = kp;
+        return crypto.subtle.exportKey("raw", kp.publicKey);
+      })
+      .then(function (raw) {
+        return fetch("/pair?room=" + encodeURIComponent(room), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: "phone", pub: b64(raw) })
+        });
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.peer) return deriveWith(unb64(d.peer));
+        return null;
+      })
+      .then(function (key) {
+        pairing = false;
+        if (key) {
+          aesKey = key;
+          els.lock.textContent = "Encrypted";
+        }
+      })
+      .catch(function () {
+        pairing = false;
+      });
+  }
+
+  function encrypt(text) {
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return crypto.subtle
+      .encrypt({ name: "AES-GCM", iv: iv }, aesKey, new TextEncoder().encode(text))
+      .then(function (ct) {
+        return { iv: b64(iv), ct: b64(ct) };
+      });
+  }
+
+  // ---- presence ---------------------------------------------------------
+
+  function checkPresence() {
+    fetch("/presence?room=" + encodeURIComponent(room) + "&role=phone", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.laptop) {
+          setStatus("waiting", "Waiting for laptop");
+          return;
+        }
+        if (!aesKey) {
+          setStatus("waiting", "Pairing");
+          pair();
+          return;
+        }
+        if (!d.paired) {
+          // The laptop re-paired; our key is stale.
+          aesKey = null;
+          setStatus("waiting", "Re-pairing");
+          pair();
+          return;
+        }
+        setStatus("paired", "Paired");
+      })
+      .catch(function () {
+        setStatus("off", "Can't reach relay");
+      });
+  }
+
+  function sendText(text, alsoSubmit) {
+    if (!aesKey) {
+      els.note.textContent = "Not paired yet — open Claude on your laptop first.";
+      return;
+    }
+    encrypt(text)
+      .then(function (payload) {
+        return fetch("/say?room=" + encodeURIComponent(room), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.delivered) {
+          els.note.textContent = "Sent, but your laptop isn't listening right now.";
+        }
+        if (alsoSubmit) {
+          return fetch("/say?room=" + encodeURIComponent(room), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ submit: true })
+          });
+        }
+      })
+      .catch(function () {
+        els.note.textContent = "Couldn't reach the relay. Text not sent.";
+      });
+  }
+
+  els.room.addEventListener("change", function () {
+    var next = els.room.value.toUpperCase().replace(/[^A-Z2-9]/g, "").slice(0, 6);
+    if (next.length !== 6) {
+      els.room.value = room;
+      return;
+    }
+    room = next;
+    els.room.value = room;
+    els.sas.textContent = "····";
+    persist();
+    pair().then(checkPresence);
+  });
+
+  els.autosend.addEventListener("change", function () {
+    localStorage.setItem("sotto.autosend", els.autosend.checked ? "1" : "0");
+  });
+
+  els.gear.addEventListener("click", function () { els.sheet.dataset.open = "true"; });
+  els.closeSheet.addEventListener("click", function () { els.sheet.dataset.open = "false"; });
+
+  // ---- speech ------------------------------------------------------------
+
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SR) {
+    els.note.textContent = "This browser can't transcribe. Use Safari on iPhone or Chrome on Android.";
+    els.talk.textContent = "Not supported";
+    pair().then(checkPresence);
+    setInterval(checkPresence, 4000);
+    return;
+  }
+
+  var recog = null;
+  var held = false;
+  var finalText = "";
+  var partialText = "";
+  var lastStart = 0;
+
+  function render() {
+    els.transcript.textContent = finalText;
+    if (partialText) {
+      var span = document.createElement("span");
+      span.className = "partial";
+      span.textContent = (finalText ? " " : "") + partialText;
+      els.transcript.appendChild(span);
+    }
+  }
+
+  function build() {
+    var r = new SR();
+    r.continuous = true;
+    r.interimResults = true;
+    r.lang = navigator.language || "en-US";
+    r.maxAlternatives = 1;
+
+    r.onresult = function (ev) {
+      partialText = "";
+      for (var i = ev.resultIndex; i < ev.results.length; i++) {
+        var chunk = ev.results[i][0].transcript;
+        if (ev.results[i].isFinal) finalText += (finalText ? " " : "") + chunk.trim();
+        else partialText += chunk;
+      }
+      render();
+    };
+
+    r.onerror = function (ev) {
+      if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+        els.note.textContent = "Microphone blocked. Allow mic access, then reload.";
+        held = false;
+        els.talk.dataset.held = "false";
+      }
+    };
+
+    // iOS ends sessions on its own, and each restart plays Safari's
+    // recognition chime. Only restart if the session was actually long enough
+    // to have been cut short — this keeps the chiming down.
+    r.onend = function () {
+      if (!held) return;
+      if (Date.now() - lastStart < 700) return;
+      try {
+        lastStart = Date.now();
+        r.start();
+      } catch (e) {}
+    };
+
+    return r;
+  }
+
+  function start() {
+    if (held) return;
+    held = true;
+    finalText = "";
+    partialText = "";
+    els.note.textContent = "";
+    els.talk.dataset.held = "true";
+    render();
+    meter(true);
+
+    if (!recog) recog = build();
+    try {
+      lastStart = Date.now();
+      recog.start();
+    } catch (e) {}
+  }
+
+  function stop() {
+    if (!held) return;
+    held = false;
+    els.talk.dataset.held = "false";
+    meter(false);
+    try { recog.stop(); } catch (e) {}
+
+    setTimeout(function () {
+      var text = (finalText + " " + partialText).trim();
+      partialText = "";
+      render();
+      if (!text) return;
+      sendText(text, els.autosend.checked);
+      if (navigator.vibrate) navigator.vibrate(12);
+    }, 350);
+  }
+
+  var meterTimer = null;
+  function meter(on) {
+    var bars = els.meter.querySelectorAll("i");
+    clearInterval(meterTimer);
+    if (!on) {
+      bars.forEach(function (b) { b.style.height = "4px"; });
+      return;
+    }
+    meterTimer = setInterval(function () {
+      bars.forEach(function (b) {
+        b.style.height = (4 + Math.random() * 12).toFixed(0) + "px";
+      });
+    }, 120);
+  }
+
+  els.talk.disabled = false;
+  els.talk.addEventListener("pointerdown", function (e) {
+    e.preventDefault();
+    els.talk.setPointerCapture(e.pointerId);
+    start();
+  });
+  els.talk.addEventListener("pointerup", function (e) { e.preventDefault(); stop(); });
+  els.talk.addEventListener("pointercancel", stop);
+  els.talk.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  window.addEventListener("blur", stop);
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) stop();
+    else checkPresence();
+  });
+
+  if ("wakeLock" in navigator) {
+    navigator.wakeLock.request("screen").catch(function () {});
+  }
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(function () {});
+  }
+
+  pair().then(checkPresence);
+  setInterval(checkPresence, 4000);
+})();
+</script>
+</body>
+</html>
