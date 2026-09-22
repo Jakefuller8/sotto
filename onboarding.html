@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Set up Sotto</title>
+<style>
+  :root {
+    --ink: #14161b; --raised: #1e222a; --edge: #2b303a;
+    --fg: #e9edf3; --dim: #8a94a2; --live: #4ec78f;
+    --signal: #3d7bf7; --warn: #dfa33e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--ink); color: var(--fg);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 40px 20px;
+  }
+  .wrap { width: 100%; max-width: 560px; }
+  h1 { font-size: 26px; font-weight: 500; margin: 0 0 6px; }
+  .sub { color: var(--dim); margin: 0 0 32px; }
+
+  .card {
+    background: var(--raised); border: 1px solid var(--edge);
+    border-radius: 14px; padding: 26px; text-align: center;
+  }
+  .qr { background: #fff; border-radius: 10px; padding: 14px; display: inline-block; line-height: 0; }
+  .qr svg { display: block; width: 216px; height: 216px; }
+  .qrhint { color: var(--dim); font-size: 14px; margin: 18px 0 0; }
+
+  .state { display: flex; align-items: center; justify-content: center; gap: 9px; margin: 26px 0 0; font-size: 15px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); flex: none; }
+  .dot[data-s="paired"] { background: var(--live); }
+  .dot[data-s="waiting"] { background: var(--warn); }
+
+  .sas {
+    font: 26px ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .22em; color: var(--live); margin: 14px 0 0;
+  }
+  .sasnote { color: var(--dim); font-size: 13px; margin: 6px 0 0; }
+
+  ol { text-align: left; color: var(--dim); font-size: 14px; padding-left: 22px; margin: 22px 0 0; }
+  ol li { margin: 7px 0; }
+
+  a.btn, button.btn {
+    display: inline-block; margin: 24px 0 0; padding: 12px 22px;
+    background: var(--signal); color: #fff; border: 0; border-radius: 9px;
+    font: inherit; font-size: 15px; font-weight: 500; text-decoration: none; cursor: pointer;
+  }
+  a.btn[aria-disabled="true"] { background: var(--raised); color: var(--dim); pointer-events: none; border: 1px solid var(--edge); }
+
+  .fallback { margin: 20px 0 0; font-size: 13px; color: var(--dim); }
+  .fallback code {
+    display: block; margin: 7px 0 0; padding: 9px 10px; background: var(--ink);
+    border: 1px solid var(--edge); border-radius: 7px; word-break: break-all;
+    font: 12px ui-monospace, Menlo, monospace; color: var(--signal);
+  }
+  .privacy { margin: 26px 0 0; font-size: 13px; color: var(--dim); text-align: center; line-height: 1.6; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Set up Sotto</h1>
+    <p class="sub">Two things to do. It takes about a minute.</p>
+
+    <div class="card">
+      <div class="qr" id="qrBox"></div>
+      <p class="qrhint">Point your phone's camera at this code</p>
+
+      <div class="state">
+        <span class="dot" id="dot"></span>
+        <span id="status">Waiting for your phone</span>
+      </div>
+
+      <div class="sas" id="sas" hidden></div>
+      <p class="sasnote" id="sasNote" hidden>Safety number — it should match your phone</p>
+
+      <ol>
+        <li>Open your camera app and point it at the code above</li>
+        <li>Tap the link that appears</li>
+        <li>Tap <strong>Allow</strong> when asked for the microphone</li>
+      </ol>
+
+      <a class="btn" id="openChat" href="https://claude.ai" aria-disabled="true">Open Claude</a>
+
+      <div class="fallback">
+        No camera handy? Open this on your phone:
+        <code id="link"></code>
+      </div>
+    </div>
+
+    <p class="privacy">Your speech is transcribed on your phone and encrypted before it leaves.<br>The relay passes along text it has no key to read.</p>
+  </div>
+
+  <script src="qr.js"></script>
+  <script src="pair.js"></script>
+  <script src="onboarding.js"></script>
+</body>
+</html>

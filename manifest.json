@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Sotto",
+  "version": "1.2.0",
+  "description": "Speak quietly into your phone and the text appears in your AI chat box, encrypted end to end.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://sotto-relay.onrender.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://claude.ai/*",
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://aistudio.google.com/*",
+        "https://www.perplexity.ai/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Sotto"
+  },
+  "icons": {
+    "128": "icon-128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
