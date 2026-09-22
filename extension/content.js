@@ -187,6 +187,38 @@
     return new TextDecoder().decode(plain);
   }
 
+  // Streaming sends an update roughly every 180ms, so a stale key produces a
+  // burst of failures. Collapse them into one re-derivation attempt, and leave
+  // a gap before trying again so a genuinely unrecoverable state cannot turn
+  // into a request loop against the relay.
+  const REPAIR_COOLDOWN_MS = 8000;
+  let repairAt = 0;
+  let repairing = null;
+
+  async function repair() {
+    if (repairing) return repairing;
+    if (Date.now() - repairAt < REPAIR_COOLDOWN_MS) return false;
+    repairAt = Date.now();
+
+    repairing = (async () => {
+      try {
+        const reply = await chrome.runtime.sendMessage({ type: "sotto-repair" });
+        if (!reply || !reply.ok) return false;
+        // pair() writes the new key to storage; onChanged normally delivers it,
+        // but read it back directly so the retry does not race that event.
+        const stored = await chrome.storage.local.get(["aesJwk"]);
+        await loadKey(stored.aesJwk);
+        return !!aesKey;
+      } catch {
+        return false;
+      } finally {
+        repairing = null;
+      }
+    })();
+
+    return repairing;
+  }
+
   // ---- status pill -------------------------------------------------------
 
   let pill = null;
@@ -372,14 +404,26 @@
       try {
         text = await decrypt(msg.iv, msg.ct);
       } catch {
-        showPill("Sotto: pairing expired", "dead", true);
-        toast("Couldn't decrypt — re-pair from the Sotto popup", true);
-        continue;
+        // A stale key is recoverable without the user doing anything: ask the
+        // service worker to re-derive against the phone's current public key,
+        // then retry this message once. Telling the user to go and re-pair by
+        // hand was a dead end for a fault the extension can fix itself.
+        const healed = await repair();
+        if (!healed) {
+          showPill("Sotto: reconnecting…", "wait");
+          continue;
+        }
+        try {
+          text = await decrypt(msg.iv, msg.ct);
+        } catch {
+          showPill("Sotto: reconnecting…", "wait");
+          continue;
+        }
       }
 
       if (!msg.stream) {
         resetStream();
-        if (!insert(text)) toast("Click into the chat box first", true);
+        if (!insert(text)) toast("Sotto: couldn’t find the message box", true);
         continue;
       }
 
@@ -396,7 +440,7 @@
       }
 
       if (!writeStreaming(text)) {
-        toast("Click into the chat box first", true);
+        toast("Sotto: couldn’t find the message box", true);
       }
     }
   }

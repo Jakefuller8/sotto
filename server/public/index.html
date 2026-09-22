@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Sotto">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#14161b">
-<link rel="manifest" href="/manifest.webmanifest">
+<link rel="manifest" id="manifestLink" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon.svg">
 <title>Sotto</title>
 <style>
@@ -234,7 +234,7 @@
     <strong>Add Sotto to your home screen?</strong>
     <button class="x" id="installNo" aria-label="Dismiss">&times;</button>
   </div>
-  <p id="installIos">Tap <span class="share">Share</span> at the bottom of Safari, then <strong>Add to Home Screen</strong>. It opens fullscreen, like an app.</p>
+  <p id="installIos">This is how Sotto is meant to work: one tap from your home screen, already paired, ready to talk. Tap <span class="share">Share</span> at the bottom of Safari, then <strong>Add to Home Screen</strong>.</p>
   <button class="install-go" id="installGo" hidden>Install</button>
 </div>
 
@@ -330,6 +330,19 @@
   function persist() {
     localStorage.setItem("sotto.room", room);
     history.replaceState(null, "", "#" + room);
+    pointManifestAtRoom();
+  }
+
+  // Point the manifest at this room before the user can reach "Add to Home
+  // Screen", so the icon iOS creates launches at /?room=<code> instead of "/".
+  // Without this the installed app starts with no code and has to hope
+  // localStorage carried over from Safari.
+  function pointManifestAtRoom() {
+    var link = document.getElementById("manifestLink");
+    if (!link) return;
+    var href = "/manifest.webmanifest?room=" + encodeURIComponent(room);
+    if (link.getAttribute("href") === href) return;
+    link.setAttribute("href", href);
   }
 
   function setStatus(state, text) {
@@ -346,6 +359,75 @@
     return crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, [
       "deriveBits"
     ]);
+  }
+
+  // The keypair has to outlive the page. It used to be memory-only, so every
+  // reload generated a new one and published it — and the laptop, which
+  // derives its key once and then stops, was left holding a stale one. The
+  // result was "Couldn't decrypt" after any reload, and iOS reloads this page
+  // whenever it evicts it from the background. /presence could not reveal it
+  // either: `paired` only means two public keys exist, not that they match.
+  //
+  // The laptop already keeps its own private key in chrome.storage.local, so
+  // persisting here is symmetric with the existing design, not a new exposure.
+  var KEYS_KEY = "sotto.keys";
+
+  function saveKeys(kp) {
+    return Promise.all([
+      crypto.subtle.exportKey("jwk", kp.privateKey),
+      crypto.subtle.exportKey("jwk", kp.publicKey)
+    ]).then(function (pair) {
+      try {
+        localStorage.setItem(KEYS_KEY, JSON.stringify({ priv: pair[0], pub: pair[1] }));
+      } catch (e) {
+        // Out of quota or storage blocked: stay in memory rather than fail.
+      }
+      return kp;
+    });
+  }
+
+  function loadKeys() {
+    var raw = null;
+    try {
+      raw = localStorage.getItem(KEYS_KEY);
+    } catch (e) {
+      return Promise.resolve(null);
+    }
+    if (!raw) return Promise.resolve(null);
+
+    var parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      return Promise.resolve(null);
+    }
+    if (!parsed || !parsed.priv || !parsed.pub) return Promise.resolve(null);
+
+    return Promise.all([
+      crypto.subtle.importKey("jwk", parsed.priv, { name: "ECDH", namedCurve: "P-256" }, true, [
+        "deriveBits"
+      ]),
+      crypto.subtle.importKey("jwk", parsed.pub, { name: "ECDH", namedCurve: "P-256" }, true, [])
+    ])
+      .then(function (keys) {
+        return { privateKey: keys[0], publicKey: keys[1] };
+      })
+      .catch(function () {
+        return null;
+      });
+  }
+
+  // Reuses the stored keypair when there is one, so a reload republishes the
+  // same public key and the shared secret stays valid. `rotate` forces a new
+  // one, for a deliberate re-pair.
+  function keysFor(rotate) {
+    if (rotate) {
+      return freshKeys().then(saveKeys);
+    }
+    if (myKeys) return Promise.resolve(myKeys);
+    return loadKeys().then(function (kp) {
+      return kp || freshKeys().then(saveKeys);
+    });
   }
 
   function deriveWith(peerRaw) {
@@ -376,13 +458,13 @@
       });
   }
 
-  function pair() {
+  function pair(rotate) {
     if (pairing) return Promise.resolve();
     pairing = true;
     aesKey = null;
     els.lock.textContent = "";
 
-    return freshKeys()
+    return keysFor(rotate)
       .then(function (kp) {
         myKeys = kp;
         return crypto.subtle.exportKey("raw", kp.publicKey);
@@ -464,6 +546,13 @@
           return;
         }
         setStatus("paired", "Paired");
+        // The home screen icon is the product — open it, hold, talk — so ask
+        // as soon as it can actually work, which is now: the manifest already
+        // carries this room, so the icon will launch paired. It is a
+        // dismissible card rather than a wall, because "Add to Home Screen"
+        // lives in a share sheet we don't control and a user who can't find it
+        // must not be stuck.
+        if (window.sottoOfferInstall) window.sottoOfferInstall();
       })
       .catch(function () {
         setStatus("off", "Can't reach relay");
@@ -627,7 +716,8 @@
     absentSince = 0;
     els.pairhint.textContent = "";
     persist();
-    pair().then(checkPresence);
+    // Typing a code by hand is a deliberate re-pair, so take a fresh keypair.
+    pair(true).then(checkPresence);
   });
 
   els.autosend.addEventListener("change", function () {

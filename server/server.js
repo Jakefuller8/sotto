@@ -23,7 +23,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, "public");
 
@@ -33,7 +33,10 @@ const MAX_BODY = 40000;
 const MAX_QUEUE = 20;
 const ROOM_TTL_MS = 30 * 60 * 1000;
 
-const ROOM_RE = /^[A-Z2-9]{6}$/;
+// Matches the generator alphabet on both clients: I and O are excluded so they
+// cannot be confused with 1 and 0. Accepting them here would let a mistyped
+// code open a real room that nothing else will ever join.
+const ROOM_RE = /^[A-HJ-NP-Z2-9]{6}$/;
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -375,6 +378,45 @@ const server = http.createServer(async (req, res) => {
       phone: !!r && now - r.lastSay < PRESENCE_MS,
       paired: !!r && !!r.pub.laptop && !!r.pub.phone,
     });
+    return;
+  }
+
+  // The home screen icon is the product: open it, hold, talk. For that to work
+  // it has to launch already paired, and a static manifest cannot — its
+  // start_url is "/" with no code, so the installed app depends on localStorage
+  // surviving the Safari-to-standalone boundary, which is not guaranteed on
+  // iOS. Serving a manifest whose start_url carries the room bakes the pairing
+  // into the icon at install time, so it launches paired forever.
+  //
+  // The room is not a secret: it only names a mailbox, and everything in that
+  // mailbox is encrypted with a key the relay never has. Anyone can join a room
+  // and still read nothing.
+  if (route === "/manifest.webmanifest") {
+    const room = (url.searchParams.get("room") || "").toUpperCase();
+    const start = ROOM_RE.test(room) ? `/?room=${room}` : "/";
+    res.writeHead(200, {
+      "Content-Type": MIME[".webmanifest"],
+      // Must not be cached, or a re-pair keeps handing out the previous room.
+      "Cache-Control": "no-store",
+    });
+    res.end(
+      JSON.stringify({
+        name: "Sotto",
+        short_name: "Sotto",
+        description: "Speak quietly into your phone; the text appears on your laptop.",
+        start_url: start,
+        scope: "/",
+        display: "standalone",
+        orientation: "portrait",
+        background_color: "#14161b",
+        theme_color: "#14161b",
+        icons: [
+          { src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" },
+          { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+        ],
+      })
+    );
     return;
   }
 

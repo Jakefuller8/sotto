@@ -1,6 +1,6 @@
 {
   "name": "sotto-relay",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Encrypted relay that carries dictated text from a phone to a laptop.",
   "main": "server.js",
   "scripts": {

@@ -89,6 +89,7 @@ t("filter rejects I, O, 0 and 1", "IO01".replace(FILTER, ""), "");
 
 const validators = [
   ["server/public/index.html", html],
+  ["server/server.js", read("./server.js")],
   ["extension/pair.js", read("../extension/pair.js")],
   ["extension/popup.js", read("../extension/popup.js")],
   ["extension/content.js", read("../extension/content.js")],
@@ -105,6 +106,67 @@ for (const [name, src] of validators) {
     "ok"
   );
 }
+
+console.log("\nKeypair persistence");
+
+// The phone used to generate a keypair on every load and keep it in memory
+// only. Each reload republished a new public key, leaving the laptop — which
+// derives once and then stops — holding a stale shared secret. Every dictation
+// then failed with "Couldn't decrypt", and iOS reloads this page whenever it
+// evicts it from the background, so it happened constantly.
+t("phone persists its keypair", /localStorage\.setItem\(KEYS_KEY/.test(html) ? "ok" : "missing", "ok");
+t("phone reloads a stored keypair", /function loadKeys\(\)/.test(html) ? "ok" : "missing", "ok");
+t(
+  "pair() reuses the stored keypair rather than always generating",
+  /return keysFor\(rotate\)/.test(html) ? "ok" : "still calls freshKeys directly",
+  "ok"
+);
+t(
+  "a deliberate re-pair still rotates the keypair",
+  /pair\(true\)/.test(html) ? "ok" : "missing",
+  "ok"
+);
+
+console.log("\nSelf-healing");
+
+const contentJs = read("../extension/content.js");
+const backgroundJs = read("../extension/background.js");
+
+// A stale key is something the extension can fix without the user. It used to
+// tell them to go and re-pair by hand, which is a dead end for a recoverable
+// fault.
+t(
+  "decrypt failure asks for a re-derivation",
+  /await repair\(\)/.test(contentJs) ? "ok" : "missing",
+  "ok"
+);
+t(
+  "and retries the message once healed",
+  (contentJs.match(/await decrypt\(msg\.iv, msg\.ct\)/g) || []).length >= 2 ? "ok" : "no retry",
+  "ok"
+);
+t(
+  "re-derivation is rate limited",
+  /REPAIR_COOLDOWN_MS/.test(contentJs) ? "ok" : "missing",
+  "ok"
+);
+t(
+  "no dead-end 'go re-pair yourself' message remains",
+  /re-pair from the Sotto popup/.test(contentJs) ? "still present" : "ok",
+  "ok"
+);
+// pair(true) here would rotate the laptop's own key, invalidating the phone's
+// in turn and making the two chase each other.
+t(
+  "healing re-derives without rotating the laptop's key",
+  /SottoPair\.pair\(false\)/.test(backgroundJs) ? "ok" : "rotates, or missing",
+  "ok"
+);
+t(
+  "background reuses pair.js rather than duplicating the crypto",
+  /importScripts\("pair\.js"\)/.test(backgroundJs) ? "ok" : "missing",
+  "ok"
+);
 
 console.log("\n" + pass + " passed, " + failures.length + " failed");
 if (failures.length) process.exit(1);

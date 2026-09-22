@@ -10,14 +10,18 @@ summer internship, so speed to a testable product matters more than polish.
 
 ## Current state
 
-Version 1.3.0, deployed 2026-09-21. `/health` reports `"version":"1.3.0"`.
-The version-mismatch blocker that dominated this file is resolved — see *The
-upload trap* below for why it happened and how to avoid re-creating it.
+Version 1.4.0. The version-mismatch blocker that once dominated this file is
+resolved — see *The upload trap* below for why it happened and how to avoid
+re-creating it.
 
-**1.3.0 has not been through a real-device pass yet.** 1.2.0 was verified end
-to end on real hardware; 1.3.0 changes pairing-code resolution and the phone's
-status messaging, and both test suites cover it, but nobody has held the phone
-and dictated into a chat box on this build. Do that before the pilot.
+**1.4.0 has not been through a real-device pass.** 1.2.0 was the last build
+verified end to end on real hardware. Since then: pairing-code resolution, the
+first-run flow, phone keypair persistence, decrypt self-healing and a generated
+manifest. The suites cover all of it and a real relay was driven from a browser
+at phone dimensions, but nobody has held a phone, scanned the QR and dictated
+on this build. **Do that before the pilot**, and specifically confirm the one
+thing no test can: that the home screen icon, once added, launches already
+paired.
 
 **Live relay:** https://sotto-relay.onrender.com (Render). **Tier is
 unconfirmed** — check the dashboard before any pilot. Free sleeps after 15
@@ -108,6 +112,22 @@ and a hosted QR API would leak the pairing code to a third party. Validated
 against ISO/IEC 18004 format strings, byte-mode capacities and Reed-Solomon
 syndromes in `extension/qr.test.js`.
 
+**The manifest is generated per pairing, not served as a static file.**
+`/manifest.webmanifest?room=ABC234` returns `start_url: "/?room=ABC234"`, and
+the page retargets its own `<link rel="manifest">` as soon as it knows the
+room. The home screen icon is the product — one tap, already paired, ready to
+talk — and a static manifest cannot deliver that: its `start_url` is `/` with
+no code, so the installed app depends on `localStorage` carrying over the
+Safari-to-standalone boundary, which is not something to rely on. Baking the
+room into `start_url` means the icon launches paired, permanently.
+
+The room is not a secret; it only names a mailbox whose contents are encrypted
+with a key the relay never sees. The manifest is served `no-store` and excluded
+from the service worker cache, or a re-pair would keep handing out the previous
+room. `sw.js` also has a `SHELL` version constant — **bump it whenever the
+shell changes**, or phones that already installed keep serving the cached old
+page and never receive the fix.
+
 **The phone does not auto-follow the laptop's pairing code.** The tempting
 version is a `/whereis?id=<installId>` endpoint the phone consults to find
 where the laptop went. Don't build that one.
@@ -153,14 +173,23 @@ duplicated phrase, never eating the user's own words. Do not weaken this check.
 ## Testing
 
 ```bash
-cd server && npm test           # 88 assertions, no dependencies needed
+cd server && npm test           # no dependencies needed
 cd extension && node qr.test.js # 25 assertions against ISO reference values
 ```
 
-`npm test` runs `room.test.js` (pairing-code resolution, 20 assertions) before
-`test.js` (the relay, 68). `room.test.js` pulls `roomFromUrl()` out of
+`npm test` runs `room.test.js` before `test.js`. `room.test.js` covers
+pairing-code resolution, alphabet agreement across all six validators, keypair
+persistence and the self-healing path; it pulls `roomFromUrl()` out of
 `index.html` and runs it directly rather than copying it, so the test cannot
 drift from the shipped page.
+
+**Do not read the result through a pipe.** `npm test | grep …` reports grep's
+exit status, which masked a syntax error in `test.js` and made a crashing suite
+look clean. Redirect to a file and check `$?`.
+
+Room codes used as fixtures must be legal under the generator alphabet — no
+`I`, `O`, `0` or `1`. Eight fixtures violated this and only surfaced when the
+relay's regex was tightened.
 
 Both suites are green as of 2026-09-21 (68/68 and 25/25). Requires Node; the
 engine floor is `>=22`.
@@ -208,6 +237,31 @@ including a genuine ECDH + AES-GCM round trip using Node's WebCrypto.
 8. **`SottoPair.reset()` was unreachable.** The README documented "Re-pair with
    a new code" as the fix for a stale pairing, but nothing in the UI called it.
    It is now a button on the onboarding page.
+9. **The phone kept its keypair in memory only and regenerated it on every
+   load.** Each reload published a new public key, while the laptop derives its
+   key once and then never again — so the laptop was left holding a stale
+   shared secret and every dictation failed with "Couldn't decrypt". iOS
+   reloads the page whenever it evicts it from the background, so this fired
+   constantly. `/presence` could not reveal it either: `paired` only means two
+   public keys exist, not that they agree. The phone now persists its keypair
+   in `localStorage`, symmetric with the laptop keeping `privJwk` in
+   `chrome.storage.local`.
+10. **A stale key was a dead end.** The extension told the user to go and
+    re-pair by hand for a fault it can fix itself. It now asks the service
+    worker to re-derive and retries the message. Use `pair(false)`, never
+    `pair(true)`: the laptop must re-derive against the phone's *current*
+    public key while keeping its own, or the two rotate in lockstep and chase
+    each other. The laptop is the only side that decrypts, so healing there
+    recovers the whole link.
+11. **A full-screen "Add to Home Screen" gate ran before anything else.** Every
+    first-time user had to complete an iOS share-sheet ritual before hearing a
+    word transcribed, and it made the deferred install banner — which already
+    held itself back until after a first dictation — unreachable. The gate is
+    gone; the banner now appears as soon as pairing succeeds.
+12. **The relay's `ROOM_RE` still accepted `I` and `O`** after the six client
+    validators were fixed, and eight test fixtures used codes the generator can
+    never emit (`PAIR23`, `UNI234`, `LON234`, `INS234`…). Tightening the regex
+    is what surfaced them.
 
 ---
 
