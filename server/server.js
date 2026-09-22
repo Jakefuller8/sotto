@@ -23,7 +23,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const VERSION = "1.4.0";
+const VERSION = "1.5.0";
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, "public");
 
@@ -156,7 +156,7 @@ function readBody(req, limit) {
   });
 }
 
-function serveStatic(res, urlPath) {
+function serveStatic(res, urlPath, room) {
   const filePath = path.join(PUBLIC, path.normalize(urlPath));
   if (!filePath.startsWith(PUBLIC)) {
     json(res, 403, { error: "forbidden" });
@@ -168,11 +168,37 @@ function serveStatic(res, urlPath) {
       res.end("Not found");
       return;
     }
+
+    let out = data;
+
+    if (path.extname(filePath) === ".html") {
+      out = Buffer.from(data.toString("utf8").replace("SOTTO_VERSION_TOKEN", VERSION));
+      data = out;
+    }
+
+    // Point the manifest at this room in the HTML itself. iOS parses
+    // <link rel="manifest"> when the page loads and does not appear to honour
+    // a later href change from JavaScript, so the page has to arrive with the
+    // right one — otherwise "Add to Home Screen" captures start_url "/" and
+    // the icon opens unpaired. This is why the QR carries ?room= rather than a
+    // fragment: a fragment never reaches the server.
+    if (path.extname(filePath) === ".html" && ROOM_RE.test(room || "")) {
+      out = Buffer.from(
+        data
+          .toString("utf8")
+          .replace(
+            /href="\/manifest\.webmanifest"/,
+            `href="/manifest.webmanifest?room=${room}"`
+          )
+      );
+    }
+
     res.writeHead(200, {
       "Content-Type": MIME[path.extname(filePath)] || "application/octet-stream",
       "Cache-Control": path.extname(filePath) === ".html" ? "no-cache" : "public, max-age=300",
+      "Content-Length": Buffer.byteLength(out),
     });
-    res.end(data);
+    res.end(out);
   });
 }
 
@@ -420,7 +446,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  serveStatic(res, route === "/" ? "/index.html" : route);
+  serveStatic(res, route === "/" ? "/index.html" : route, id);
 });
 
 setInterval(() => {

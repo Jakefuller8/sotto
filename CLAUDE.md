@@ -112,10 +112,34 @@ and a hosted QR API would leak the pairing code to a third party. Validated
 against ISO/IEC 18004 format strings, byte-mode capacities and Reed-Solomon
 syndromes in `extension/qr.test.js`.
 
+**The chime is why the recognition session outlives a press.** iOS plays its
+dictation sound on every `SpeechRecognition.start()` and no web API silences
+it. The old code started on press and stopped on release, so it chimed once
+per sentence — unusable in a library, which is the entire premise. Now the
+session is kept alive and press/release only gates whether results are
+collected (`baseIndex` marks where an utterance began, so speech between
+presses is discarded). The chime fires once per session instead.
+
+The cost is an open microphone between sentences, and on iOS Web Speech streams
+audio to Apple — so `IDLE_STOP_MS` is deliberately short (10s), and
+`closeMic()` shuts it immediately on blur, `pagehide` or `visibilitychange`.
+**Do not lengthen that idle window without deciding the privacy question
+first**; it is a trade, not an oversight.
+
+**The QR carries `?room=CODE`, not `#CODE`, and the relay rewrites the manifest
+link server-side.** A fragment never reaches the server, and the server has to
+know the room while serving the page: iOS parses `<link rel="manifest">` at
+load and does **not** appear to honour a later `href` change from JavaScript.
+An icon added from a page whose link was only retargeted by JS captured
+`start_url: "/"` and launched unpaired — the observed failure. The rewrite in
+`serveStatic()` makes the correct href present in the markup before any script
+runs. (That iOS behaviour is inferred from the failure, not from documentation;
+Settings → Diagnostics reports the launch URL so it can be confirmed.)
+
 **The manifest is generated per pairing, not served as a static file.**
 `/manifest.webmanifest?room=ABC234` returns `start_url: "/?room=ABC234"`, and
-the page retargets its own `<link rel="manifest">` as soon as it knows the
-room. The home screen icon is the product — one tap, already paired, ready to
+the page also retargets its own `<link rel="manifest">` as a fallback for the
+fragment form. The home screen icon is the product — one tap, already paired, ready to
 talk — and a static manifest cannot deliver that: its `start_url` is `/` with
 no code, so the installed app depends on `localStorage` carrying over the
 Safari-to-standalone boundary, which is not something to rely on. Baking the
@@ -262,6 +286,27 @@ including a genuine ECDH + AES-GCM round trip using Node's WebCrypto.
     validators were fixed, and eight test fixtures used codes the generator can
     never emit (`PAIR23`, `UNI234`, `LON234`, `INS234`…). Tightening the regex
     is what surfaced them.
+13. **The install prompt could be permanently destroyed.** The early return for
+    "already dismissed" sat *above* the definition of
+    `window.sottoOfferInstall`, so the first time that flag was set — by the ×,
+    or automatically on `appinstalled` — the function was never defined again
+    and no prompt could ever appear on that phone. A user who installed once
+    and later deleted the icon had no way to be told how to re-add it.
+    Dismissal is now session-only and the steps live permanently in Settings.
+14. **An installed icon launched unpaired.** See the `?room=` note above. This
+    is what "it worked until I added it to the home screen" was.
+15. **The chime fired once per sentence.** See the session-lifetime note above.
+
+## Diagnostics
+
+Settings → **Diagnostics** reports mode (installed app vs browser tab), the
+room and where it came from, the build version, whether a keypair was stored,
+and **the URL the app was launched with** — captured before `persist()` rewrites
+it. That last line is the only reliable way to tell whether a home screen icon
+captured its pairing code, and it turns "it stopped working" into one
+screenshot. The version comes from `SOTTO_VERSION_TOKEN`, substituted by the
+relay, so a stale service worker cache is visible rather than looking like a
+code bug.
 
 ---
 

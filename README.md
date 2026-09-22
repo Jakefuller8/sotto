@@ -176,10 +176,16 @@ That needs a native helper that synthesizes keystrokes — the macOS Accessibili
 API, or `SendInput` on Windows. Roughly 300 lines per platform, plus a $99/year
 Apple account to avoid Gatekeeper warnings.
 
-**Safari plays a chime** on every recognition session. iOS triggers it and no API
-can suppress it. The page now avoids needless restarts, so you hear it less, but
-removing it entirely means transcribing server-side instead of on-device — which
-would break the end-to-end encryption promise.
+**Safari plays a chime** when a recognition session starts. iOS triggers it and
+no web API can suppress it. It used to fire on every press; the session now
+stays alive across presses, so you hear it once per session rather than once
+per sentence. The cost is that the microphone stays open for 10 seconds after
+you release, and on iOS that audio goes to Apple for recognition — a deliberate
+trade, not an oversight. Removing the chime entirely would mean transcribing
+server-side, which would break the end-to-end encryption promise.
+
+Worth trying: the chime appears to follow the ringer volume on iOS, so turning
+the ringer down may quiet it further. Unverified.
 
 **Text appears as you speak.** The phone sends the whole current utterance on
 each update (throttled to ~180ms) and the extension replaces what it wrote,

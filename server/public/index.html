@@ -129,6 +129,16 @@
   .note { font-size: 13px; color: var(--warn); padding-top: 8px; line-height: 1.5; }
   .note:empty { display: none; }
 
+  #diag {
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--dim); white-space: pre-wrap; word-break: break-all;
+    background: var(--raised); border: 1px solid var(--edge);
+    border-radius: 8px; padding: 9px 10px; margin: 0;
+    -webkit-user-select: text; user-select: text;
+  }
+  #homeScreenSteps { font-size: 13px; line-height: 1.55; }
+  #homeScreenHelp[hidden] { display: none; }
+
   .pairhint { font-size: 13px; color: var(--dim); padding-top: 8px; line-height: 1.5; }
   .pairhint:empty { display: none; }
   .pairhint code {
@@ -254,6 +264,16 @@
 
   <p id="sasHelp">If these four characters differ from your laptop's, someone may be intercepting. Re-pair with a new code.</p>
 
+  <div class="field" id="homeScreenHelp">
+    <span>Home screen</span>
+    <p id="homeScreenSteps">Sotto is meant to live on your home screen: one tap, already paired, ready to talk. Tap <strong>Share</strong> at the bottom of Safari, then <strong>Add to Home Screen</strong>.</p>
+  </div>
+
+  <div class="field">
+    <span>Diagnostics</span>
+    <p id="diag"></p>
+  </div>
+
   <button class="close" id="closeSheet">Done</button>
 </div>
 
@@ -298,7 +318,10 @@
     closeSheet: document.getElementById("closeSheet"),
     room: document.getElementById("room"),
     sas: document.getElementById("sas"),
-    pairhint: document.getElementById("pairhint")
+    pairhint: document.getElementById("pairhint"),
+    diag: document.getElementById("diag"),
+    homeScreenHelp: document.getElementById("homeScreenHelp"),
+    homeScreenSteps: document.getElementById("homeScreenSteps")
   };
 
   // A scanned link always wins over the cached code, and both spellings are
@@ -309,6 +332,14 @@
     var m = /[?&]room=([^&]+)/.exec(location.search);
     return m ? decodeURIComponent(m[1]) : location.hash.slice(1);
   }
+
+  // Captured before persist() rewrites the URL, so Diagnostics can show what
+  // the app was actually launched with. This is the one fact that settles
+  // whether an installed icon carried its pairing code.
+  var LAUNCH_URL = location.href;
+  var LAUNCH_STANDALONE =
+    window.navigator.standalone === true ||
+    window.matchMedia("(display-mode: standalone)").matches;
 
   var scanned = roomFromUrl()
     .toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g, "").slice(0, 6);
@@ -348,6 +379,31 @@
   function setStatus(state, text) {
     els.dot.dataset.state = state;
     els.statusText.textContent = text;
+  }
+
+  // Shown in Settings so a failure can be read off the screen instead of
+  // guessed at. "launched with" is the decisive line: if an installed icon
+  // opens without a room in the URL, the icon did not capture the pairing.
+  function renderDiag() {
+    if (!els.diag) return;
+    var scannedFrom = scanned.length === 6 ? "url" : cached.length === 6 ? "cache" : "generated";
+    els.diag.textContent =
+      "mode: " + (LAUNCH_STANDALONE ? "installed app" : "browser tab") +
+      "\nroom: " + room + " (from " + scannedFrom + ")" +
+      "\nlaunched with: " + LAUNCH_URL +
+      "\nkeypair: " + (localStorage.getItem(KEYS_KEY) ? "stored" : "new") +
+      "\nversion: " + (window.SOTTO_BUILD || "unknown");
+
+    // An installed app that launched with no room is the failure we are
+    // hunting; say so plainly rather than making it inferable.
+    if (LAUNCH_STANDALONE && !/[?&]room=|#[A-HJ-NP-Z2-9]{6}/.test(LAUNCH_URL)) {
+      els.diag.textContent +=
+        "\n\nThis icon launched without a pairing code, so it fell back to " +
+        (cached.length === 6 ? "the cached one." : "a new one.");
+    }
+
+    // The steps are pointless once it is already installed.
+    if (els.homeScreenHelp) els.homeScreenHelp.hidden = LAUNCH_STANDALONE;
   }
 
   // ---- end-to-end encryption -------------------------------------------
@@ -724,7 +780,10 @@
     localStorage.setItem("sotto.autosend", els.autosend.checked ? "1" : "0");
   });
 
-  els.gear.addEventListener("click", function () { els.sheet.dataset.open = "true"; });
+  els.gear.addEventListener("click", function () {
+    renderDiag();
+    els.sheet.dataset.open = "true";
+  });
   els.closeSheet.addEventListener("click", function () { els.sheet.dataset.open = "false"; });
 
   // ---- home screen install -----------------------------------------------
@@ -758,6 +817,25 @@
   var partialText = "";
   var lastStart = 0;
 
+  // iOS plays its dictation chime on every recognition start, and there is no
+  // web API to silence it. It used to start on each press and stop on each
+  // release, so you heard it once per sentence — unusable in a library, which
+  // is the whole point of Sotto.
+  //
+  // So the session is now kept alive across presses: press/release only gates
+  // whether we collect the text. The chime then fires once when a session
+  // begins, not once per sentence.
+  //
+  // The cost is that the microphone stays open between sentences, and on iOS
+  // Web Speech streams audio to Apple for recognition — so a longer idle
+  // window means more ambient audio leaves the phone. That is why this is
+  // short rather than generous.
+  var IDLE_STOP_MS = 10000;
+  var live = false;
+  var idleTimer = null;
+  var baseIndex = 0;
+  var lastResultsLen = 0;
+
   function render() {
     els.transcript.textContent = finalText;
     if (partialText) {
@@ -775,9 +853,21 @@
     r.lang = navigator.language || "en-US";
     r.maxAlternatives = 1;
 
+    r.onstart = function () {
+      live = true;
+    };
+
     r.onresult = function (ev) {
+      lastResultsLen = ev.results.length;
+
+      // The session outlives a press now, so anything said between presses
+      // must be discarded rather than folded into the next utterance.
+      if (!held) return;
+
+      // baseIndex is where this utterance began, so speech from before the
+      // press is not pulled in when the recogniser revises earlier results.
       partialText = "";
-      for (var i = ev.resultIndex; i < ev.results.length; i++) {
+      for (var i = Math.max(ev.resultIndex, baseIndex); i < ev.results.length; i++) {
         var chunk = ev.results[i][0].transcript;
         if (ev.results[i].isFinal) finalText += (finalText ? " " : "") + chunk.trim();
         else partialText += chunk;
@@ -794,10 +884,11 @@
       }
     };
 
-    // iOS ends sessions on its own, and each restart plays Safari's
-    // recognition chime. Only restart if the session was actually long enough
-    // to have been cut short — this keeps the chiming down.
+    // iOS ends sessions on its own. Restart only if the user is still holding
+    // — a restart chimes, and chiming during a silence the user did not ask
+    // for is worse than chiming when they press.
     r.onend = function () {
+      live = false;
       if (!held) return;
       if (Date.now() - lastStart < 700) return;
       try {
@@ -822,10 +913,17 @@
     newUtterance();
 
     if (!recog) recog = build();
-    try {
-      lastStart = Date.now();
-      recog.start();
-    } catch (e) {}
+    clearTimeout(idleTimer);
+
+    // Only start when no session is running. A live session means no chime —
+    // that is the entire point of keeping it alive.
+    baseIndex = lastResultsLen;
+    if (!live) {
+      try {
+        lastStart = Date.now();
+        recog.start();
+      } catch (e) {}
+    }
   }
 
   function stop() {
@@ -833,7 +931,15 @@
     held = false;
     els.talk.dataset.held = "false";
     meter(false);
-    try { recog.stop(); } catch (e) {}
+
+    // Deliberately not recog.stop(): stopping is what makes the next press
+    // chime. The session is left running briefly so consecutive sentences are
+    // silent, then closed so the microphone is not held open indefinitely.
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () {
+      if (held) return;
+      try { recog.stop(); } catch (e) {}
+    }, IDLE_STOP_MS);
 
     setTimeout(function () {
       var text = (finalText + " " + partialText).trim();
@@ -870,9 +976,19 @@
   els.talk.addEventListener("pointerup", function (e) { e.preventDefault(); stop(); });
   els.talk.addEventListener("pointercancel", stop);
   els.talk.addEventListener("contextmenu", function (e) { e.preventDefault(); });
-  window.addEventListener("blur", stop);
+  // stop() deliberately leaves the session running for a few seconds so the
+  // next sentence does not chime. Backgrounding is different: the microphone
+  // must close immediately rather than linger while the app is out of sight.
+  function closeMic() {
+    stop();
+    clearTimeout(idleTimer);
+    try { if (recog) recog.stop(); } catch (e) {}
+  }
+
+  window.addEventListener("blur", closeMic);
+  window.addEventListener("pagehide", closeMic);
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) stop();
+    if (document.hidden) closeMic();
     else checkPresence();
   });
 
@@ -896,9 +1012,16 @@
       window.matchMedia("(display-mode: standalone)").matches ||
       window.navigator.standalone === true;
 
-    if (standalone || localStorage.getItem("sotto.installDismissed") === "1") {
-      return;
-    }
+    // Already an installed app: nothing to offer.
+    if (standalone) return;
+
+    // This early return used to sit above the definition of
+    // window.sottoOfferInstall, so once "dismissed" was set — by the × or
+    // automatically on appinstalled — the function was never defined again and
+    // no install prompt could ever appear on that phone. Dismissal is now for
+    // this session only, and the steps also live permanently in Settings, so
+    // the instruction cannot be lost.
+    var dismissedThisSession = false;
 
     var deferred = null;
     window.addEventListener("beforeinstallprompt", function (ev) {
@@ -910,7 +1033,7 @@
 
     dismiss.addEventListener("click", function () {
       card.hidden = true;
-      localStorage.setItem("sotto.installDismissed", "1");
+      dismissedThisSession = true;
     });
 
     go.addEventListener("click", function () {
@@ -918,22 +1041,20 @@
       deferred.prompt();
       deferred.userChoice.then(function () {
         card.hidden = true;
-        localStorage.setItem("sotto.installDismissed", "1");
+        dismissedThisSession = true;
         deferred = null;
       });
     });
 
-    // Hold it back until they have actually dictated something, so the first
-    // thing they meet is the product rather than an upsell.
     window.sottoOfferInstall = function () {
       if (card.hidden === false) return;
-      if (localStorage.getItem("sotto.installDismissed") === "1") return;
+      if (dismissedThisSession) return;
       card.hidden = false;
     };
 
     window.addEventListener("appinstalled", function () {
       card.hidden = true;
-      localStorage.setItem("sotto.installDismissed", "1");
+      dismissedThisSession = true;
     });
   })();
 
@@ -945,5 +1066,9 @@
   setInterval(checkPresence, 4000);
 })();
 </script>
+<!-- The relay substitutes the running version here, so Diagnostics reports
+     which build is actually on the phone. A stale service worker cache is
+     otherwise invisible and looks like a code bug. -->
+<script>window.SOTTO_BUILD = "SOTTO_VERSION_TOKEN";</script>
 </body>
 </html>

@@ -103,7 +103,7 @@ ok("15 bytes rolls over to version 2", ver(v2) === 2, `got v${ver(v2)}`);
 
 console.log("\nMatrix structure");
 
-const qr = QR.qrMatrix("https://sotto-relay.onrender.com/#ABC234");
+const qr = QR.qrMatrix("https://sotto-relay.onrender.com/?room=ABC234");
 ok("size follows 4v+17", qr.size === ver(qr) * 4 + 17,
   `size ${qr.size}, version ${ver(qr)}`);
 ok("modules array is square", qr.modules.length === qr.size &&
@@ -205,8 +205,8 @@ console.log("\nMask selection");
 
 const masks = new Set();
 for (const text of [
-  "https://sotto-relay.onrender.com/#ABC234",
-  "https://sotto-relay.onrender.com/#ZZZZZZ",
+  "https://sotto-relay.onrender.com/?room=ABC234",
+  "https://sotto-relay.onrender.com/?room=ZZZZZZ",
   "short",
   "A".repeat(100),
 ]) {
@@ -224,7 +224,7 @@ ok("mask selection keeps all payloads within balance", true);
 
 console.log("\nSVG output");
 
-const svg = QR.qrSvg("https://sotto-relay.onrender.com/#ABC234", { scale: 6 });
+const svg = QR.qrSvg("https://sotto-relay.onrender.com/?room=ABC234", { scale: 6 });
 ok("emits an svg element", svg.startsWith("<svg") && svg.endsWith("</svg>"));
 ok("declares the svg namespace", svg.includes('xmlns="http://www.w3.org/2000/svg"'));
 ok("uses crisp edges so modules stay square", svg.includes("crispEdges"));
@@ -238,7 +238,7 @@ ok("dimensions account for the 4-module quiet zone", dim === expectedDim,
 
 console.log("\nReal payload");
 
-const url = "https://sotto-relay.onrender.com/#ABC234";
+const url = "https://sotto-relay.onrender.com/?room=ABC234";
 const real = QR.qrMatrix(url);
 ok("the actual pairing URL encodes", real.size > 0);
 ok("and lands on a low, densely-scannable version", ver(real) <= 4,

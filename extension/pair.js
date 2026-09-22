@@ -41,8 +41,14 @@ const SottoPair = (function () {
     return "https://" + host(relay);
   }
 
+  // A query parameter, not a fragment. A fragment is never sent to the server,
+  // so the relay could not know the room while serving the page — and it has to
+  // know, because it must emit <link rel="manifest" href="...?room=CODE"> in
+  // the HTML itself. iOS parses that link when the page loads; rewriting the
+  // href from JavaScript afterwards is too late, which is why an installed icon
+  // came up unpaired. The phone accepts both forms.
   function phoneUrl(relay, room) {
-    return `${base(relay)}/#${room}`;
+    return `${base(relay)}/?room=${room}`;
   }
 
   // Ensures relay, room and installId exist in storage. Returns them.
