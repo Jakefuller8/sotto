@@ -297,6 +297,26 @@ including a genuine ECDH + AES-GCM round trip using Node's WebCrypto.
     is what "it worked until I added it to the home screen" was.
 15. **The chime fired once per sentence.** See the session-lifetime note above.
 
+16. **Pairing did not survive closing the app.** Two causes compounding. The
+    relay drops a room after `ROOM_TTL_MS` (30 minutes) idle and loses
+    everything on redeploy; and the phone fetched the laptop's public key from
+    the relay on *every* launch, so once the relay had forgotten, the phone
+    could not derive and demanded a re-pair. Worse, `checkPresence` treated
+    `paired: false` as "our key is stale" and threw a perfectly good key away —
+    on the relay's schedule, not the user's.
+
+    The relay was never needed for this: the shared secret is a function of the
+    two keypairs alone, and both now live on their own devices. The phone stores
+    the peer public key (`sotto.peer`) and `pairFromStorage()` derives locally
+    at launch with **no network call**, so a returning user is encrypted before
+    a single request goes out. `paired: false` now triggers a quiet
+    `republish()` that keeps the existing key and only adopts a new one if the
+    peer actually changed. Verified by wiping the relay's memory entirely and
+    reloading at a bare `/`: the phone still came up encrypted.
+
+    **Do not "simplify" the startup path back to calling `pair()` first.** That
+    is the regression.
+
 ## Diagnostics
 
 Settings → **Diagnostics** reports mode (installed app vs browser tab), the

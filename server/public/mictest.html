@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sotto — mic test</title>
+<style>
+  :root {
+    --ink:#14161b; --raised:#1e222a; --edge:#2b303a;
+    --fg:#e9edf3; --dim:#8a94a2; --live:#4ec78f; --signal:#3d7bf7; --warn:#dfa33e;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body {
+    margin:0; background:var(--ink); color:var(--fg);
+    font:16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding:calc(env(safe-area-inset-top) + 20px) 20px calc(env(safe-area-inset-bottom) + 28px);
+    -webkit-user-select:none; user-select:none;
+  }
+  h1 { font-size:20px; font-weight:500; margin:0 0 6px; }
+  .sub { color:var(--dim); font-size:14px; margin:0 0 24px; }
+  .card {
+    background:var(--raised); border:1px solid var(--edge); border-radius:14px;
+    padding:18px; margin:0 0 16px;
+  }
+  .card h2 { font-size:16px; font-weight:600; margin:0 0 4px; }
+  .card p { font-size:14px; color:var(--dim); margin:0 0 14px; line-height:1.5; }
+  button {
+    width:100%; border:0; border-radius:10px; padding:15px;
+    font:inherit; font-size:16px; font-weight:500; color:#fff; background:var(--signal);
+  }
+  button.alt { background:var(--warn); color:#14161b; }
+  button:disabled { background:var(--raised); color:var(--dim); border:1px solid var(--edge); }
+  .verdict { margin:14px 0 0; font-size:14px; line-height:1.55; }
+  .verdict b { color:var(--fg); }
+  .log {
+    font:12px ui-monospace, Menlo, monospace; color:var(--dim);
+    white-space:pre-wrap; word-break:break-word; margin:12px 0 0;
+    -webkit-user-select:text; user-select:text;
+  }
+  .q { margin:26px 0 0; padding:16px; border:1px dashed var(--edge); border-radius:12px; }
+  .q p { margin:0 0 10px; font-size:15px; }
+  .q strong { color:var(--live); }
+</style>
+</head>
+<body>
+
+<h1>Which one beeps?</h1>
+<p class="sub">Two ways of reaching the microphone. Run both with the volume up and listen. This settles whether the chime can be removed.</p>
+
+<div class="card">
+  <h2>1 — Plain microphone</h2>
+  <p>getUserMedia, the same call a video call uses. No speech recognition involved. Records 4 seconds, then stops.</p>
+  <button id="gum">Test plain microphone</button>
+  <div class="verdict" id="gumOut"></div>
+</div>
+
+<div class="card">
+  <h2>2 — Speech recognition</h2>
+  <p>The API Sotto uses today. Starts a dictation session for 4 seconds.</p>
+  <button class="alt" id="sr">Test speech recognition</button>
+  <div class="verdict" id="srOut"></div>
+</div>
+
+<div class="q">
+  <p><strong>The question:</strong> did test 1 make any sound?</p>
+  <p style="color:var(--dim);font-size:14px;margin:0">If test 1 was silent and test 2 beeped, the chime is tied to the speech API and can be removed by replacing it. If both beeped, it is tied to microphone access itself and no web app can avoid it.</p>
+</div>
+
+<div class="log" id="log"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var logEl = document.getElementById("log");
+  var lines = [];
+  function log(s) {
+    lines.push(s);
+    logEl.textContent = lines.join("\n");
+  }
+
+  log("ua: " + navigator.userAgent);
+  log("standalone: " + (window.navigator.standalone === true));
+  log("SpeechRecognition: " +
+    !!(window.SpeechRecognition || window.webkitSpeechRecognition));
+  log("getUserMedia: " + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
+
+  // ---- 1: plain microphone, no speech API ------------------------------
+  var gumBtn = document.getElementById("gum");
+  var gumOut = document.getElementById("gumOut");
+
+  gumBtn.addEventListener("click", function () {
+    gumBtn.disabled = true;
+    gumOut.textContent = "Listening for 4 seconds — did you hear anything?";
+    log("\n[1] getUserMedia requested at " + new Date().toISOString().slice(11, 19));
+
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then(function (stream) {
+        log("[1] mic open, no speech API used");
+
+        // Prove the mic is genuinely live by reading the level, so a silent
+        // result cannot be dismissed as "the mic never actually opened".
+        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+        var src = ctx.createMediaStreamSource(stream);
+        var an = ctx.createAnalyser();
+        an.fftSize = 512;
+        src.connect(an);
+        var buf = new Uint8Array(an.frequencyBinCount);
+        var peak = 0;
+        var iv = setInterval(function () {
+          an.getByteFrequencyData(buf);
+          for (var i = 0; i < buf.length; i++) if (buf[i] > peak) peak = buf[i];
+        }, 100);
+
+        setTimeout(function () {
+          clearInterval(iv);
+          stream.getTracks().forEach(function (t) { t.stop(); });
+          ctx.close();
+          log("[1] mic closed. peak level " + peak + "/255");
+          gumOut.innerHTML =
+            "Done. Mic was live (peak <b>" + peak + "/255</b>).<br>" +
+            "<b>Did you hear a beep?</b>";
+          gumBtn.disabled = false;
+        }, 4000);
+      })
+      .catch(function (e) {
+        log("[1] failed: " + e.name + " " + e.message);
+        gumOut.textContent = "Microphone blocked: " + e.name;
+        gumBtn.disabled = false;
+      });
+  });
+
+  // ---- 2: speech recognition -------------------------------------------
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var srBtn = document.getElementById("sr");
+  var srOut = document.getElementById("srOut");
+
+  if (!SR) {
+    srBtn.disabled = true;
+    srOut.textContent = "This browser has no SpeechRecognition.";
+  }
+
+  srBtn.addEventListener("click", function () {
+    if (!SR) return;
+    srBtn.disabled = true;
+    srOut.textContent = "Starting a dictation session — listen now.";
+    log("\n[2] SpeechRecognition.start() at " + new Date().toISOString().slice(11, 19));
+
+    var r = new SR();
+    r.continuous = true;
+    r.interimResults = true;
+    r.lang = navigator.language || "en-US";
+
+    r.onstart = function () { log("[2] onstart"); };
+    r.onaudiostart = function () { log("[2] onaudiostart"); };
+    r.onsoundstart = function () { log("[2] onsoundstart"); };
+    r.onerror = function (ev) { log("[2] error: " + ev.error); };
+    r.onend = function () {
+      log("[2] onend");
+      srOut.innerHTML = "Done. <b>Did you hear a beep — and how many?</b>";
+      srBtn.disabled = false;
+    };
+
+    try {
+      r.start();
+    } catch (e) {
+      log("[2] start threw: " + e.message);
+      srBtn.disabled = false;
+    }
+
+    setTimeout(function () {
+      try { r.stop(); } catch (e) {}
+    }, 4000);
+  });
+})();
+</script>
+</body>
+</html>

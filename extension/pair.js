@@ -154,7 +154,13 @@ const SottoPair = (function () {
       const p = await pres.json();
 
       let sas = stored.sas || null;
-      if (p.phone && !sas) sas = await pair(false);
+
+      // `paired` goes false whenever the relay has dropped the room — 30
+      // minutes idle, or any redeploy — even though both devices still hold a
+      // usable key. Republish so the phone can find us again. pair(false)
+      // returns null and leaves the stored key untouched when the relay has no
+      // peer key yet, so this cannot downgrade a working pairing.
+      if (p.phone && (!sas || !p.paired)) sas = (await pair(false)) || sas;
 
       let stage = "ready";
       if (!p.phone) stage = "no-phone";

@@ -136,8 +136,14 @@
     border-radius: 8px; padding: 9px 10px; margin: 0;
     -webkit-user-select: text; user-select: text;
   }
-  #homeScreenSteps { font-size: 13px; line-height: 1.55; }
   #homeScreenHelp[hidden] { display: none; }
+  ol.steps {
+    margin: 2px 0 0; padding-left: 20px;
+    font-size: 14px; line-height: 1.7; color: var(--fg);
+  }
+  ol.steps li { margin: 5px 0; }
+  ol.steps b { font-weight: 600; }
+  .stepnote { font-size: 13px; color: var(--dim); margin: 10px 0 0; line-height: 1.5; }
 
   .pairhint { font-size: 13px; color: var(--dim); padding-top: 8px; line-height: 1.5; }
   .pairhint:empty { display: none; }
@@ -244,7 +250,14 @@
     <strong>Add Sotto to your home screen?</strong>
     <button class="x" id="installNo" aria-label="Dismiss">&times;</button>
   </div>
-  <p id="installIos">This is how Sotto is meant to work: one tap from your home screen, already paired, ready to talk. Tap <span class="share">Share</span> at the bottom of Safari, then <strong>Add to Home Screen</strong>.</p>
+  <div id="installIos">
+    <p class="stepnote" style="margin:0 0 8px">One tap from your home screen, already paired, ready to talk.</p>
+    <ol class="steps">
+      <li>Tap <b>Share</b> — the square with an arrow, bottom centre of Safari.</li>
+      <li>Swipe up, then tap <b>Add to Home Screen</b>.</li>
+      <li>Tap <b>Add</b>, top right.</li>
+    </ol>
+  </div>
   <button class="install-go" id="installGo" hidden>Install</button>
 </div>
 
@@ -265,8 +278,15 @@
   <p id="sasHelp">If these four characters differ from your laptop's, someone may be intercepting. Re-pair with a new code.</p>
 
   <div class="field" id="homeScreenHelp">
-    <span>Home screen</span>
-    <p id="homeScreenSteps">Sotto is meant to live on your home screen: one tap, already paired, ready to talk. Tap <strong>Share</strong> at the bottom of Safari, then <strong>Add to Home Screen</strong>.</p>
+    <span>Add Sotto to your home screen</span>
+    <ol class="steps" id="homeScreenSteps">
+      <li>Tap the <b>Share</b> button — the square with an arrow pointing up, at the <b>bottom centre</b> of Safari.</li>
+      <li>Swipe up on the list that appears.</li>
+      <li>Tap <b>Add to Home Screen</b>.</li>
+      <li>Tap <b>Add</b>, top right.</li>
+      <li>Leave Safari and open <b>Sotto</b> from your home screen.</li>
+    </ol>
+    <p class="stepnote">It opens fullscreen and already paired, so it is one tap to talk.</p>
   </div>
 
   <div class="field">
@@ -392,6 +412,8 @@
       "\nroom: " + room + " (from " + scannedFrom + ")" +
       "\nlaunched with: " + LAUNCH_URL +
       "\nkeypair: " + (localStorage.getItem(KEYS_KEY) ? "stored" : "new") +
+      "\npeer key: " + (savedPeer() ? "stored (pairing is permanent)" : "not stored") +
+      "\nencrypted: " + (aesKey ? "yes" : "no") +
       "\nversion: " + (window.SOTTO_BUILD || "unknown");
 
     // An installed app that launched with no room is the failure we are
@@ -514,10 +536,67 @@
       });
   }
 
+  // Pairing has to survive closing the app and coming back a week later.
+  //
+  // It did not, for two reasons that compounded. The relay drops a room after
+  // ROOM_TTL_MS (30 minutes) idle and loses everything on redeploy, so the
+  // laptop's published public key disappears. And this function always fetched
+  // that key from the relay, so once it was gone the phone could not derive
+  // anything and sat there unpaired.
+  //
+  // The relay was never needed for this. The shared secret is a function of
+  // the two keypairs alone, and both are now stored on their own devices — so
+  // remembering the laptop's public key lets the phone re-derive the identical
+  // key locally, offline, indefinitely. The relay is only consulted to learn
+  // that key the first time, or if the laptop rotates it.
+  var PEER_KEY = "sotto.peer";
+
+  function savedPeer() {
+    try {
+      return localStorage.getItem(PEER_KEY) || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function rememberPeer(pubB64) {
+    try {
+      localStorage.setItem(PEER_KEY, pubB64);
+    } catch (e) {}
+  }
+
+  function forgetPeer() {
+    try {
+      localStorage.removeItem(PEER_KEY);
+    } catch (e) {}
+  }
+
+  // Derive from what is already on this device. No network, so a cold launch is
+  // encrypted immediately rather than waiting on the relay.
+  function pairFromStorage() {
+    var peer = savedPeer();
+    if (!peer) return Promise.resolve(false);
+
+    return keysFor(false)
+      .then(function (kp) {
+        myKeys = kp;
+        return deriveWith(unb64(peer));
+      })
+      .then(function (key) {
+        if (!key) return false;
+        aesKey = key;
+        els.lock.textContent = "Encrypted";
+        return true;
+      })
+      .catch(function () {
+        return false;
+      });
+  }
+
   function pair(rotate) {
     if (pairing) return Promise.resolve();
     pairing = true;
-    aesKey = null;
+    if (rotate) forgetPeer();
     els.lock.textContent = "";
 
     return keysFor(rotate)
@@ -534,8 +613,11 @@
       })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d.peer) return deriveWith(unb64(d.peer));
-        return null;
+        if (!d.peer) return null;
+        // Only drop a working key once a replacement is in hand, so a relay
+        // that has forgotten the room cannot leave us worse off than before.
+        rememberPeer(d.peer);
+        return deriveWith(unb64(d.peer));
       })
       .then(function (key) {
         pairing = false;
@@ -546,6 +628,49 @@
       })
       .catch(function () {
         pairing = false;
+      });
+  }
+
+  // Put our public key back on the relay after it has forgotten the room,
+  // without touching the key we already hold. If the laptop turns out to have
+  // rotated its key meanwhile, adopt the new one — that is the only case where
+  // a stored pairing genuinely has to change.
+  var REPUBLISH_COOLDOWN_MS = 15000;
+  var republishedAt = 0;
+  var republishing = false;
+
+  function republish() {
+    if (republishing || pairing) return;
+    if (Date.now() - republishedAt < REPUBLISH_COOLDOWN_MS) return;
+    republishing = true;
+    republishedAt = Date.now();
+
+    keysFor(false)
+      .then(function (kp) {
+        myKeys = kp;
+        return crypto.subtle.exportKey("raw", kp.publicKey);
+      })
+      .then(function (raw) {
+        return fetch("/pair?room=" + encodeURIComponent(room), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: "phone", pub: b64(raw) })
+        });
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.peer || d.peer === savedPeer()) return null;
+        rememberPeer(d.peer);
+        return deriveWith(unb64(d.peer)).then(function (key) {
+          if (key) {
+            aesKey = key;
+            els.lock.textContent = "Encrypted";
+          }
+        });
+      })
+      .catch(function () {})
+      .then(function () {
+        republishing = false;
       });
   }
 
@@ -594,12 +719,15 @@
           pair();
           return;
         }
+        // `paired` only means the relay is currently holding both public keys.
+        // It forgets them after 30 minutes idle and on every redeploy, so this
+        // goes false routinely while both devices still hold a perfectly good
+        // key. Discarding ours here — which is what it used to do — threw away
+        // a working pairing on the relay's schedule and is why reopening the
+        // app demanded a re-pair. Republish quietly so the laptop can find us
+        // again, but keep the key we have.
         if (!d.paired) {
-          // The laptop re-paired; our key is stale.
-          aesKey = null;
-          setStatus("waiting", "Re-pairing");
-          pair();
-          return;
+          republish();
         }
         setStatus("paired", "Paired");
         // The home screen icon is the product — open it, hold, talk — so ask
@@ -1062,7 +1190,15 @@
     navigator.serviceWorker.register("/sw.js").catch(function () {});
   }
 
-  pair().then(checkPresence);
+  // Derive from stored material first: a returning user is encrypted before a
+  // single request goes out, so reopening the app a week later just works. Only
+  // fall back to the relay when this device has never seen the laptop's key.
+  pairFromStorage()
+    .then(function (ok) {
+      if (!ok) return pair(false);
+    })
+    .then(checkPresence);
+
   setInterval(checkPresence, 4000);
 })();
 </script>

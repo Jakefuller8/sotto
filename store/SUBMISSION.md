@@ -30,7 +30,7 @@ The zip must have `manifest.json` at its **root**, not inside a folder.
 
 **macOS:** open the `extension` folder, select all the files *inside* it
 (Cmd+A), right-click → **Compress**. You'll get `Archive.zip` — rename it
-`sotto-1.5.0.zip`.
+`sotto-1.6.0.zip`.
 
 Do **not** zip the `extension` folder itself. That nests everything one level
 down and the upload will be rejected.
@@ -50,7 +50,7 @@ value to users.
 1. Go to `https://chrome.google.com/webstore/devconsole`
 2. Sign in and pay the **one-time $5** registration fee
 3. Click **Items** → **+ New Item**
-4. Drag in `sotto-1.5.0.zip`
+4. Drag in `sotto-1.6.0.zip`
 5. Wait for it to process, then fill in the fields below
 
 ---

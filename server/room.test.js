@@ -127,6 +127,60 @@ t(
   "ok"
 );
 
+console.log("\nPermanent pairing");
+
+// Pairing has to survive closing the app and returning a week later. It did
+// not: the relay drops a room after 30 minutes idle and on every redeploy, and
+// the phone fetched the laptop's public key from the relay on every launch. So
+// once the relay forgot, the phone could not derive and demanded a re-pair.
+//
+// The relay is not needed for this. The shared secret is a function of the two
+// keypairs alone, so storing the peer's public key lets the phone re-derive the
+// same key locally, offline, indefinitely.
+t("phone stores the peer public key", /localStorage\.setItem\(PEER_KEY/.test(html) ? "ok" : "missing", "ok");
+t(
+  "startup derives from storage before touching the relay",
+  /pairFromStorage\(\)[\s\S]{0,120}\.then\(function \(ok\) \{[\s\S]{0,80}pair\(false\)/.test(html)
+    ? "ok"
+    : "missing",
+  "ok"
+);
+t(
+  "pairFromStorage does no network call",
+  (function () {
+    const fn = (html.match(/function pairFromStorage\(\)[\s\S]*?\n  \}/) || [""])[0];
+    return /fetch\(/.test(fn) ? "hits the network" : "ok";
+  })(),
+  "ok"
+);
+// A relay that has forgotten the handshake must not cost the user their key.
+t(
+  "a relay that forgot the room does not discard the key",
+  /if \(!d\.paired\) \{\s*\n\s*republish\(\);/.test(html) ? "ok" : "still clears aesKey",
+  "ok"
+);
+t(
+  "republish keeps the existing key unless the peer actually changed",
+  /if \(!d\.peer \|\| d\.peer === savedPeer\(\)\) return null;/.test(html) ? "ok" : "missing",
+  "ok"
+);
+t(
+  "republish is rate limited",
+  /REPUBLISH_COOLDOWN_MS/.test(html) ? "ok" : "missing",
+  "ok"
+);
+t(
+  "laptop republishes when the relay has dropped the room",
+  /!sas \|\| !p\.paired/.test(read("../extension/pair.js")) ? "ok" : "missing",
+  "ok"
+);
+// pair(false) returning null must not wipe a good key on the laptop either.
+t(
+  "laptop keeps its key when the relay has no peer key",
+  /if \(!data\.peer\) return null;/.test(read("../extension/pair.js")) ? "ok" : "missing",
+  "ok"
+);
+
 console.log("\nSelf-healing");
 
 const contentJs = read("../extension/content.js");
