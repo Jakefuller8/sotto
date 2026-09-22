@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Speak quietly into your phone and the text appears in your AI chat box, encrypted end to end.",
   "permissions": ["storage"],
-  "host_permissions": ["https://*/*"],
+  "host_permissions": ["https://sotto-relay.onrender.com/*"],
   "content_scripts": [
     {
       "matches": [
