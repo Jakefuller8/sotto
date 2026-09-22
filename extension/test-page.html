@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — insertion tests</title>
+<style>
+  body {
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 760px;
+    margin: 40px auto;
+    padding: 0 20px;
+    color: #1a1d22;
+  }
+  h1 { font-size: 19px; font-weight: 500; margin-bottom: 4px; }
+  p.lede { color: #61697a; margin-top: 0; }
+  #results { margin: 24px 0; border-top: 1px solid #e2e5ea; }
+  .r { display: flex; gap: 10px; padding: 9px 0; border-bottom: 1px solid #f0f2f5; align-items: baseline; }
+  .tag { font: 500 11px ui-monospace, Menlo, monospace; padding: 2px 6px; border-radius: 4px; }
+  .pass .tag { background: #e4f4ec; color: #1c6b45; }
+  .fail .tag { background: #fbe8e6; color: #9c2f26; }
+  .detail { color: #8b95a3; font-size: 13px; }
+  #summary { font-weight: 500; padding: 12px 0; }
+  .stage { border: 1px solid #e2e5ea; border-radius: 10px; padding: 16px; margin-top: 28px; background: #fafbfc; }
+  .stage h2 { font-size: 13px; font-weight: 500; color: #61697a; margin: 0 0 10px; }
+  .ProseMirror {
+    min-height: 54px;
+    border: 1px solid #d4d9e0;
+    border-radius: 8px;
+    padding: 11px 13px;
+    background: #fff;
+    outline: none;
+  }
+  .ProseMirror:focus { border-color: #3d7bf7; }
+  button.send { margin-top: 10px; padding: 7px 14px; border-radius: 7px; border: 1px solid #d4d9e0; background: #fff; cursor: pointer; font: inherit; font-size: 14px; }
+  #log { font: 12px ui-monospace, Menlo, monospace; color: #61697a; margin-top: 10px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<h1>Insertion tests</h1>
+<p class="lede">Runs the real <code>content.js</code> against a mock chat box. No relay needed — just open this file in Chrome.</p>
+
+<div id="results"></div>
+<div id="summary">Running…</div>
+
+<div class="stage">
+  <h2>Mock chat box — type here and run the tests again to check caret handling</h2>
+  <div id="box" class="ProseMirror" contenteditable="true" role="textbox"></div>
+  <button class="send" id="sendBtn" aria-label="Send message">Send</button>
+  <div id="log"></div>
+</div>
+
+<script>
+  // Stub the extension APIs so content.js loads unmodified. The script polls a
+  // relay we are not running, so it will sit in its retry loop harmlessly while
+  // we exercise the insertion path through window.__sottoTest.
+  const events = [];
+
+  window.chrome = {
+    storage: {
+      local: { get: (_keys, cb) => cb({ relay: "127.0.0.1:1", room: "TEST23" }) },
+      onChanged: { addListener() {} }
+    }
+  };
+
+  const box = document.getElementById("box");
+  const sendBtn = document.getElementById("sendBtn");
+
+  // Record the events a framework like React or ProseMirror would rely on.
+  for (const type of ["beforeinput", "input"]) {
+    box.addEventListener(type, (e) => {
+      events.push({ type: e.type, inputType: e.inputType, data: e.data });
+    });
+  }
+  sendBtn.addEventListener("click", () => events.push({ type: "send-clicked" }));
+</script>
+
+<script src="content.js"></script>
+
+<script>
+(function () {
+  const out = document.getElementById("results");
+  const log = document.getElementById("log");
+  let pass = 0, fail = 0;
+
+  function check(name, condition, detail) {
+    const row = document.createElement("div");
+    row.className = "r " + (condition ? "pass" : "fail");
+    row.innerHTML =
+      '<span class="tag">' + (condition ? "pass" : "FAIL") + "</span>" +
+      "<span>" + name + (detail && !condition ? ' <span class="detail">— ' + detail + "</span>" : "") + "</span>";
+    out.appendChild(row);
+    condition ? pass++ : fail++;
+  }
+
+  function send(msg) {
+    events.length = 0;
+    if (msg.type === "submit") return { ok: api.submit() };
+    return { ok: api.insert(msg.text) };
+  }
+
+  function reset() {
+    box.innerHTML = "";
+    box.blur();
+  }
+
+  const api = window.__sottoTest;
+  check("content.js exposed its insertion API", !!api);
+
+  if (!api) {
+    document.getElementById("summary").textContent =
+      "content.js did not load, or __sottoTest is missing.";
+    return;
+  }
+
+  reset();
+  let res = send({ type: "insert", text: "hello world" });
+  check("inserts into an empty box", box.innerText.trim() === "hello world",
+    JSON.stringify(box.innerText));
+  check("reports success back to the caller", res && res.ok === true);
+
+  check("fires a beforeinput event", events.some((e) => e.type === "beforeinput"),
+    "frameworks listen for this");
+  check("fires an input event", events.some((e) => e.type === "input"));
+  check("uses insertText as the inputType",
+    events.some((e) => e.inputType === "insertText"));
+
+  send({ type: "insert", text: "second sentence" });
+  check("appends rather than replacing",
+    box.innerText.includes("hello world") && box.innerText.includes("second sentence"),
+    JSON.stringify(box.innerText));
+  check("adds a separating space",
+    /hello world second sentence/.test(box.innerText.replace(/\s+/g, " ")),
+    JSON.stringify(box.innerText));
+
+  reset();
+  box.focus();
+  send({ type: "insert", text: "trailing" });
+  const before = box.innerText;
+  send({ type: "insert", text: "next" });
+  check("does not double-space after existing whitespace",
+    !/  /.test(box.innerText.replace(/\u00a0/g, " ")),
+    JSON.stringify(box.innerText));
+
+  reset();
+  send({ type: "insert", text: "café — naïve 你好 🎧" });
+  check("preserves multibyte characters",
+    box.innerText.trim() === "café — naïve 你好 🎧",
+    JSON.stringify(box.innerText));
+
+  reset();
+  const long = "word ".repeat(400).trim();
+  send({ type: "insert", text: long });
+  check("handles a long dictation intact",
+    box.innerText.trim().length === long.length,
+    box.innerText.trim().length + " of " + long.length);
+
+  reset();
+  send({ type: "insert", text: "ready to submit" });
+  const sres = send({ type: "submit" });
+  check("finds and clicks the send button",
+    events.some((e) => e.type === "send-clicked"), JSON.stringify(events));
+  check("reports submit success", sres && sres.ok === true);
+
+  reset();
+  const hidden = document.createElement("div");
+  hidden.contentEditable = "true";
+  hidden.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
+  document.body.appendChild(hidden);
+  send({ type: "insert", text: "visibility check" });
+  check("ignores zero-size editable elements",
+    box.innerText.includes("visibility check") && hidden.innerText === "",
+    "picked the hidden node instead");
+  hidden.remove();
+
+  reset();
+
+  document.getElementById("summary").textContent =
+    pass + " passed, " + fail + " failed";
+  log.textContent =
+    "Last event sequence:\n" + events.map((e) => "  " + JSON.stringify(e)).join("\n");
+})();
+</script>
+
+</body>
+</html>
