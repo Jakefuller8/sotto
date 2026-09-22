@@ -10,23 +10,53 @@ summer internship, so speed to a testable product matters more than polish.
 
 ## Current state
 
-Working end to end and tested on real devices. Version 1.2.0.
+Working end to end and tested on real devices. Version 1.2.0, live in
+production as of 2026-09-21.
 
-**Immediate blocker:** GitHub still has `server.js` at VERSION `1.0.1`. The
-local copy is `1.2.0`. GitHub's web drag-and-drop silently skipped the file
-because it had been browser-edited earlier, so Render keeps deploying the old
-build. Two files need pushing:
+`/health` reports `"version":"1.2.0"`. The version-mismatch blocker that
+dominated this file is resolved — see *The upload trap* below for why it
+happened and how to avoid re-creating it.
 
-- `server/server.js` — must reach `const VERSION = "1.2.0";`
-- `server/public/index.html` — must contain `streamUpdate`
+**Live relay:** https://sotto-relay.onrender.com (Render). **Tier is
+unconfirmed** — check the dashboard before any pilot. Free sleeps after 15
+minutes, takes ~30s to wake, and wipes the in-memory analytics counters; the
+first person to hit a cold start will decide the product is broken.
 
-Verify after pushing: `curl -s https://sotto-relay.onrender.com/health` should
-report `"version":"1.2.0"`.
+**Repo:** github.com/Jakefuller8/sotto — a real git checkout at
+`~/Documents/sotto`.
 
-**Live relay:** https://sotto-relay.onrender.com (Render, should be Starter tier
-— free tier sleeps and wipes the in-memory analytics counters).
+### The upload trap — don't re-create it
 
-**Repo:** github.com/Jakefuller8/sotto
+For several releases the repo was updated by dragging files into GitHub's web
+uploader. Two distinct failures came from that, and both were silent:
+
+1. **Browser-edited files get skipped.** `server/server.js` had been edited in
+   GitHub's web editor, after which drag-and-drop refused to overwrite it
+   without saying so. The repo sat at `1.0.1` while local was `1.2.0`, so Render
+   kept building the old relay.
+2. **Directory structure gets flattened.** The 1.2.0 `extension/` did upload —
+   into the repo *root*, not `extension/`. Result: a correct 1.2.0 extension in
+   the wrong place, a stale 1.0.1 `server.js`, and a root `manifest.json` that
+   could make "Load unpacked" grab the wrong directory. Of the 13 stray root
+   files, 9 were byte-identical to the proper 1.2.0 `extension/` files — git
+   recorded 5 of them as straight renames into `extension/` (those it didn't
+   already have a copy of), which confirmed the diagnosis.
+
+Commit and push from the command line. Never the web uploader.
+
+### Bumping the version
+
+The number lives in three places and they drifted apart once already
+(`package.json` said `1.0.1` while the relay served `1.2.0`):
+
+- `server/server.js` — `const VERSION`, the only one `/health` actually reports
+- `server/package.json` — `"version"`
+- `extension/manifest.json` — `"version"`, and Chrome rejects a re-upload that
+  doesn't increase it
+
+Render deploys on push to `main` and takes ~2–3 minutes; `/health` showing the
+old number immediately after a push is normal. Confirm via `uptimeSeconds`
+resetting, not just the version field.
 
 ---
 
@@ -88,9 +118,16 @@ duplicated phrase, never eating the user's own words. Do not weaken this check.
 ## Testing
 
 ```bash
-cd server && npm test          # 67 assertions, no dependencies needed
+cd server && npm test           # 68 assertions, no dependencies needed
 cd extension && node qr.test.js # 25 assertions against ISO reference values
 ```
+
+Both suites are green as of 2026-09-21 (68/68 and 25/25). Requires Node; the
+engine floor is `>=22`.
+
+The relay suite takes roughly three minutes — the latency and long-polling
+tests genuinely wait. It prints nothing for the first stretch, which looks like
+a hang and isn't. Don't kill it.
 
 `extension/test-page.html` — open in Chrome. Runs the real `content.js` against
 a mock ProseMirror box: insertion, streaming, revision, and the case where the
@@ -140,13 +177,14 @@ including a genuine ECDH + AES-GCM round trip using Node's WebCrypto.
 
 **Blocking the pilot:**
 
-1. Push the two files above; confirm `/health` shows 1.2.0
-2. Host `store/privacy-policy.html` on GitHub Pages (needs a real contact email
+1. Host `store/privacy-policy.html` on GitHub Pages (needs a real contact email
    substituted for `[YOUR EMAIL ADDRESS]`) — required for store submission
-3. Submit to the Chrome Web Store. Everything to paste is in
+2. Submit to the Chrome Web Store. Everything to paste is in
    `store/SUBMISSION.md`. Strip `qr.test.js` and `test-page.html` from the
    upload zip; `manifest.json` must sit at the zip root
-4. Confirm Render is on Starter, not Free
+3. Confirm Render is on Starter, not Free
+
+*Done: 1.2.0 pushed and verified live on 2026-09-21.*
 
 **After approval:**
 
