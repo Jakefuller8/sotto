@@ -23,7 +23,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const VERSION = "1.6.1";
+const VERSION = "1.7.0";
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, "public");
 
@@ -95,6 +95,18 @@ function note(room, kind, size) {
   } else if (kind === "submit") {
     stats.submits++;
   }
+}
+
+// A laptop parked on a long poll is present by definition — that held request
+// IS the connection. lastPoll alone could not express that: it is stamped once
+// when the poll arrives and the request then hangs for up to HOLD_MS (25s),
+// while presence expires after PRESENCE_MS (12s). So for over half of every
+// poll cycle the relay reported a connected laptop as gone, and the phone
+// flapped between "Paired" and "Laptop not connected" during normal use.
+function laptopPresent(r) {
+  if (!r) return false;
+  if (r.waiters.length) return true;
+  return Date.now() - r.lastPoll < PRESENCE_MS;
 }
 
 function room(id) {
@@ -341,7 +353,7 @@ const server = http.createServer(async (req, res) => {
 
     const r = room(id);
     r.lastSay = Date.now();
-    const laptopHere = Date.now() - r.lastPoll < PRESENCE_MS;
+    const laptopHere = laptopPresent(r);
 
     if (body.submit === true) {
       r.queue.push({ type: "submit" });
@@ -350,7 +362,7 @@ const server = http.createServer(async (req, res) => {
       // End-of-utterance marker. Carries no text; it exists so a streamed
       // dictation counts once rather than once per chunk.
       note(id, "dictation", Number(body.size) || 0);
-      json(res, 200, { ok: true, delivered: Date.now() - r.lastPoll < PRESENCE_MS });
+      json(res, 200, { ok: true, delivered: laptopPresent(r) });
       return;
     } else if (typeof body.iv === "string" && typeof body.ct === "string") {
       if (body.ct.length > MAX_BODY) {
@@ -400,7 +412,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     json(res, 200, {
-      laptop: !!r && now - r.lastPoll < PRESENCE_MS,
+      laptop: laptopPresent(r),
       phone: !!r && now - r.lastSay < PRESENCE_MS,
       paired: !!r && !!r.pub.laptop && !!r.pub.phone,
     });

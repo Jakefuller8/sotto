@@ -317,6 +317,28 @@ including a genuine ECDH + AES-GCM round trip using Node's WebCrypto.
     **Do not "simplify" the startup path back to calling `pair()` first.** That
     is the regression.
 
+17. **A connected laptop read as absent for most of every poll cycle.** The
+    relay stamps `lastPoll` once when a poll arrives and then holds that
+    request for `HOLD_MS` (25s), while presence expires after `PRESENCE_MS`
+    (12s). So between the 12s and 25s marks the relay reported the laptop gone
+    while it sat there connected, and the phone flapped between "Paired" and
+    "Laptop not connected" during entirely normal use. This was most of what
+    "clunky" meant. `laptopPresent()` now counts a parked waiter as presence,
+    which it is by definition. **Every presence check must go through that
+    helper** — a raw `lastPoll < PRESENCE_MS` comparison reintroduces the bug,
+    and `room.test.js` fails if one appears.
+18. **Open chat tabs were never connected.** Declared content scripts only run
+    on page load, so installing or updating the extension left every open tab
+    without one — and after an update, with an *orphaned* one whose context had
+    been invalidated. The user was told to reload the tab, which is a support
+    ticket rather than a product. `background.js` now injects into matching
+    open tabs on install, update and browser startup. Ownership in `content.js`
+    is keyed to `runtime.id + version` rather than a boolean, because a plain
+    "already loaded" flag is set by the *superseded* script and would make the
+    fresh injection stand down; a superseded loop also checks
+    `chrome.runtime.id` each iteration and retires itself instead of polling on
+    with a stale key.
+
 ## Diagnostics
 
 Settings → **Diagnostics** reports mode (installed app vs browser tab), the

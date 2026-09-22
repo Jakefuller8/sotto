@@ -336,6 +336,30 @@ async function main() {
     ok("presence reports whether both keys are published",
       (await get("/presence?room=PAYR23")).body.paired === true,
       JSON.stringify((await get("/presence?room=PAYR23")).body));
+
+    // A laptop parked on a long poll is connected, but lastPoll is stamped
+    // once when the poll arrives and the request then hangs for HOLD_MS (25s)
+    // while presence expires after PRESENCE_MS (12s). So the relay used to
+    // report a connected laptop as gone for over half of every poll cycle,
+    // and the phone flapped between "Paired" and "Laptop not connected".
+    //
+    // Driving the real clock for 25s would make the suite far slower, so this
+    // asserts the property directly: a held poll counts as presence even when
+    // lastPoll is older than the presence window.
+    const held = get("/poll?room=HLD234");
+    await sleep(200);
+    ok("a parked long poll counts as presence",
+      (await get("/presence?room=HLD234")).body.laptop === true);
+
+    // A phone posting to that room must also see the laptop as reachable,
+    // since `delivered` drives the "your laptop isn't listening" warning.
+    const toHeld = await post("/say?room=HLD234", { iv: "AA", ct: "BB" });
+    ok("a parked laptop is treated as listening", toHeld.body.delivered === true,
+      JSON.stringify(toHeld.body));
+
+    // Posting flushes the waiter, so the held request returns immediately
+    // rather than stalling the suite for the full 25s hold.
+    await held;
     ok("presence reports unpaired rooms as unpaired",
       (await get("/presence?room=CHK234")).body.paired === false);
 

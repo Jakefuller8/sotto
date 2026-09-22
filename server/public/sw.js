@@ -5,7 +5,7 @@
 // Bump this whenever the shell changes. The activate handler deletes every
 // other cache, so a bump is what pushes a fixed index.html to phones that
 // already installed the app — without it they keep running the old page.
-const SHELL = "sotto-shell-v5";
+const SHELL = "sotto-shell-v6";
 
 // The manifest is deliberately absent: it is generated per pairing so its
 // start_url carries the room code, and a cached copy would hand the installed

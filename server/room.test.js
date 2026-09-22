@@ -181,6 +181,69 @@ t(
   "ok"
 );
 
+console.log("\nPresence while parked on a long poll");
+
+// The relay holds a laptop's poll for HOLD_MS but expires presence after
+// PRESENCE_MS. With HOLD_MS (25s) longer than PRESENCE_MS (12s), a stamp-once
+// lastPoll meant a connected laptop read as absent for most of every cycle.
+const serverSrc = read("./server.js");
+const holdMs = Number((serverSrc.match(/HOLD_MS = (\d+)/) || [])[1]);
+const presenceMs = Number((serverSrc.match(/PRESENCE_MS = (\d+)/) || [])[1]);
+
+t(
+  "presence accounts for parked waiters",
+  /function laptopPresent\(r\)[\s\S]{0,200}r\.waiters\.length/.test(serverSrc) ? "ok" : "missing",
+  "ok"
+);
+t(
+  "no presence check bypasses laptopPresent()",
+  /lastPoll < PRESENCE_MS/.test(serverSrc.replace(/function laptopPresent[\s\S]*?\n\}/, ""))
+    ? "a raw lastPoll comparison remains"
+    : "ok",
+  "ok"
+);
+// Documents why the helper is needed. If someone later shortens the hold below
+// the presence window this stops being load-bearing, and that is worth knowing.
+t(
+  "hold outlasts the presence window (so waiters must count)",
+  holdMs > presenceMs ? "ok" : "hold is now shorter — helper may be redundant",
+  "ok"
+);
+
+console.log("\nAlready-open tabs");
+
+// Declared content scripts only run on page load, so installing or updating
+// the extension left every open chat tab without one — the pill never
+// appeared and the user was told to reload. background.js injects into those
+// tabs instead, which means three files have to agree on the origin list.
+const manifest = JSON.parse(read("../extension/manifest.json"));
+const bgSrc = read("../extension/background.js");
+const csMatches = manifest.content_scripts[0].matches;
+
+t("extension can inject programmatically", manifest.permissions.includes("scripting") ? "ok" : "no scripting permission", "ok");
+t(
+  "every content-script origin has a host permission",
+  csMatches.filter((o) => !manifest.host_permissions.includes(o)).join(",") || "ok",
+  "ok"
+);
+t(
+  "background injects into the same origins it declares",
+  csMatches.filter((o) => !bgSrc.includes(o)).join(",") || "ok",
+  "ok"
+);
+t("injects on install and update", /onInstalled[\s\S]{0,120}injectIntoOpenTabs\(\)/.test(bgSrc) ? "ok" : "missing", "ok");
+t("injects after a browser restart", /onStartup[\s\S]{0,120}injectIntoOpenTabs\(\)/.test(bgSrc) ? "ok" : "missing", "ok");
+
+// Double injection would insert every dictation twice; a plain "loaded" flag
+// would leave a tab dead after an update, because the superseded script set it.
+const contentSrc = read("../extension/content.js");
+t("content script claims the tab by build", /window\.__sottoOwner = ME/.test(contentSrc) ? "ok" : "missing", "ok");
+t(
+  "a superseded loop retires itself",
+  /window\.__sottoOwner !== ME/.test(contentSrc) && /chrome\.runtime\.id/.test(contentSrc) ? "ok" : "missing",
+  "ok"
+);
+
 console.log("\nSelf-healing");
 
 const contentJs = read("../extension/content.js");

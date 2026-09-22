@@ -8,10 +8,57 @@
 // and duplicating the crypto here would let the two copies drift apart.
 importScripts("pair.js");
 
+// The origins content.js is declared for. Kept in step with the
+// content_scripts matches in manifest.json.
+const CHAT_ORIGINS = [
+  "https://claude.ai/*",
+  "https://chatgpt.com/*",
+  "https://chat.openai.com/*",
+  "https://gemini.google.com/*",
+  "https://aistudio.google.com/*",
+  "https://www.perplexity.ai/*",
+];
+
+// Declared content scripts only run when a page loads. So installing,
+// updating, or reloading the extension leaves every already-open chat tab
+// with no content script — or, after an update, an orphaned one whose
+// extension context has been invalidated. Either way the pill never appears
+// and the user is told to reload the tab, which is a support ticket rather
+// than a product.
+//
+// Injecting into the matching tabs that are already open closes that gap.
+// content.js guards against running twice, so a tab that already has a live
+// script is unaffected.
+async function injectIntoOpenTabs() {
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({ url: CHAT_ORIGINS });
+  } catch {
+    return;
+  }
+
+  await Promise.all(
+    tabs.map((tab) =>
+      chrome.scripting
+        .executeScript({ target: { tabId: tab.id }, files: ["content.js"] })
+        // A tab can be discarded, mid-navigation, or otherwise not scriptable.
+        // One failure must not stop the others.
+        .catch(() => {})
+    )
+  );
+}
+
 chrome.runtime.onInstalled.addListener((details) => {
+  injectIntoOpenTabs();
   if (details.reason === "install") {
     chrome.tabs.create({ url: chrome.runtime.getURL("onboarding.html") });
   }
+});
+
+// Covers a browser restart, where the worker starts before any chat tab has
+// finished restoring.
+chrome.runtime.onStartup.addListener(() => {
+  injectIntoOpenTabs();
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {

@@ -10,6 +10,19 @@
 (function () {
   "use strict";
 
+  // background.js injects this into tabs that were already open when the
+  // extension was installed or updated, so one tab can receive it twice and
+  // two polling loops would insert every dictation twice.
+  //
+  // A plain "already loaded" flag is not enough. After an update the previous
+  // script is still in the page with an invalidated extension context — dead,
+  // but it set the flag, so a fresh injection would bail and leave the tab
+  // broken until reloaded. Ownership is therefore keyed to the build: a new
+  // version takes over, an identical one stands down.
+  const ME = chrome.runtime.id + "@" + chrome.runtime.getManifest().version;
+  if (window.__sottoOwner === ME) return;
+  window.__sottoOwner = ME;
+
   const RELAY = "https://sotto-relay.onrender.com"; // overridable in the popup
 
   // Ordered most-specific first. The generic fallbacks absorb UI redesigns.
@@ -450,6 +463,16 @@
     started = true;
 
     for (;;) {
+      // After an update the old script keeps running in the page. Its fetches
+      // would still succeed and it would insert text with a stale key, so it
+      // has to notice it has been superseded and retire. An invalidated
+      // extension context leaves chrome.runtime.id undefined; being outvoted
+      // for ownership of the tab means the same thing.
+      if (!chrome.runtime || !chrome.runtime.id || window.__sottoOwner !== ME) {
+        if (pill) pill.remove();
+        return;
+      }
+
       const room = config.room;
       if (!/^[A-HJ-NP-Z2-9]{6}$/.test(room)) {
         showPill("Sotto not set up", "dead", true);
