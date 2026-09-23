@@ -65,16 +65,16 @@ Speak quietly into your phone and the text appears in your AI chat box. Encrypte
 
 ### Description
 ```
-Talk to Claude and ChatGPT without talking at your laptop.
+Use your phone as a microphone to prompt Claude or ChatGPT on your laptop.
 
-Dictating to AI is faster than typing, but nobody wants to speak at their screen in a café, a library, or an open office. Sotto moves the microphone to where it should be: your phone, held close, at a volume only you can hear.
+Dictating to AI is faster than typing, but nobody wants to talk at their screen in a cafe, a library, or an open office. Sotto moves the microphone to where it belongs: your phone, held close, at a volume only you can hear.
 
 HOW IT WORKS
 
 1. Install this extension
-2. Scan the QR code that appears with your phone's camera
-3. Hold the button on your phone and speak quietly
-4. The text appears in your AI chat box
+2. Scan the QR code with your phone camera
+3. Hold the button on your phone and speak
+4. The words appear in your AI chat box as you say them
 
 No app to download. No account. No subscription.
 
@@ -84,23 +84,23 @@ claude.ai, chatgpt.com, gemini.google.com, aistudio.google.com and perplexity.ai
 
 ENCRYPTED END TO END
 
-Your speech is transcribed on your phone and encrypted before it leaves the device. Our relay forwards text it has no key to read — not as a policy, but by construction.
+Your speech is turned into text on your phone and encrypted before it leaves the device. The relay forwards text it has no key to read - not as a policy, but by construction.
 
-Your phone and laptop exchange keys directly using ECDH, and both display a matching safety number so you can verify no one intercepted the exchange. Encryption is AES-GCM.
+Your phone and laptop agree on a key directly using ECDH, and both show a matching safety number so you can check that nobody intercepted the exchange. Encryption is AES-GCM.
 
-We never receive your audio. We never store your text. We keep no account, no email address, no advertising profile.
+We never receive your audio. We never store your text. There is no account and no advertising profile.
 
-WHAT THIS IS NOT
+WHAT IT IS NOT
 
-Sotto is a microphone, not an assistant. It does not record, transcribe to a file, summarise, or process your speech with AI. It puts your words in a text box. That's the whole product.
+Sotto is a microphone, not an assistant. It does not record to a file, summarise, or process your speech with AI. It puts your words in a text box. That is the whole product.
 
 PERMISSIONS
 
-Storage, to keep your pairing key on your own device. Access to our relay, which is the only server Sotto contacts. Access to the five supported chat sites, used for one thing: placing your dictated text into the message box. Sotto does not read your conversations, your history, or any other site.
+Storage, to keep your pairing key on your own device. Access to the relay, the only server Sotto contacts. Access to the supported chat sites, for one purpose: placing your dictated text into the message box. Sotto does not read your conversations or your history.
 
 BUILT AT WHARTON
 
-Made because talking to a laptop in a library feels ridiculous. If it's useful, or if something breaks, I'd like to hear about it.
+Made because talking at a laptop in a library feels ridiculous. If it is useful, or if something breaks, I would like to hear about it.
 ```
 
 ### Category

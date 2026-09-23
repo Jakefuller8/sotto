@@ -215,12 +215,19 @@ Room codes used as fixtures must be legal under the generator alphabet — no
 `I`, `O`, `0` or `1`. Eight fixtures violated this and only surfaced when the
 relay's regex was tightened.
 
-Both suites are green as of 2026-09-21 (68/68 and 25/25). Requires Node; the
-engine floor is `>=22`.
+Green as of 2026-09-22: 57 room + 87 relay + 25 QR. Requires Node; the engine
+floor is `>=22`.
 
 The relay suite takes roughly three minutes — the latency and long-polling
-tests genuinely wait. It prints nothing for the first stretch, which looks like
-a hang and isn't. Don't kill it.
+tests genuinely wait, several parking a poll for the full 25s `HOLD_MS`. It
+prints nothing for stretches, which looks like a hang and isn't. Don't kill it.
+
+**Never run two suites at once.** Both bind port 39413, so the second one's
+server fails to bind and its harness silently talks to the *first* suite's
+server. That produces failures that look like real regressions — dictation
+counts off by one, persistence appearing broken — and sent a long stretch of
+this session chasing a bug that did not exist. If results look impossible,
+check for a stale `node server.js` on 39413 before believing them.
 
 `extension/test-page.html` — open in Chrome. Runs the real `content.js` against
 a mock ProseMirror box: insertion, streaming, revision, and the case where the
@@ -291,8 +298,11 @@ including a genuine ECDH + AES-GCM round trip using Node's WebCrypto.
     `window.sottoOfferInstall`, so the first time that flag was set — by the ×,
     or automatically on `appinstalled` — the function was never defined again
     and no prompt could ever appear on that phone. A user who installed once
-    and later deleted the icon had no way to be told how to re-add it.
-    Dismissal is now session-only and the steps live permanently in Settings.
+    and later deleted the icon had no way to be told how to re-add it. The
+    prompt is now a **permanent, non-dismissible bar** above the talk button
+    opening a dedicated instructions screen; both vanish once `display-mode`
+    reports the app is installed. **Do not re-add a dismiss control** — that is
+    the bug.
 14. **An installed icon launched unpaired.** See the `?room=` note above. This
     is what "it worked until I added it to the home screen" was.
 15. **The chime fired once per sentence.** See the session-lifetime note above.
@@ -381,17 +391,27 @@ code bug.
 
 ## Next steps
 
+**Submitted to the Chrome Web Store on 2026-09-22**, version 1.9.0, as
+**Unlisted**. Awaiting review (typically 1–3 days). Package built with
+`store/build-zip.sh`; listing text, permission justifications and screenshots
+are in `store/`.
+
 **Blocking the pilot:**
 
-1. Host `store/privacy-policy.html` on GitHub Pages (needs a real contact email
-   substituted for `[YOUR EMAIL ADDRESS]`) — required for store submission
-2. Submit to the Chrome Web Store. Everything to paste is in
-   `store/SUBMISSION.md`. Strip `qr.test.js` and `test-page.html` from the
-   upload zip; `manifest.json` must sit at the zip root
-3. Confirm Render is on Starter, not Free
+1. **A real-device pass on 1.9.0.** 1.2.0 was the last build verified end to
+   end on hardware. Everything since — pairing-code resolution, permanent
+   pairing, decrypt self-healing, the generated manifest, the presence fix,
+   the install bar — is covered by tests and browser checks only. Confirm in
+   particular that the **home screen icon launches already paired**, which no
+   test can prove.
+2. Watch for the review email. A rejection names the specific policy; the
+   usual causes are screenshot dimensions, a privacy policy URL that 404s, or
+   a permission justification that does not match the code.
 
-*Done 2026-09-21: 1.2.0 pushed and verified live, then 1.3.0 fixing the
-pairing-code dead end (bugs 6–8 above).*
+*Done 2026-09-22: 1.2.0 → 1.9.0. Privacy policy live at
+https://jakefuller8.github.io/sotto/ (GitHub Pages, `main` + `/docs`). Render
+confirmed on the paid `0.5c-512mb` instance, with a disk attached and
+`SOTTO_DATA_DIR` set, so `/stats` reports `persistence: disk`.*
 
 **After approval:**
 
