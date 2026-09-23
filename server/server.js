@@ -23,7 +23,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-const VERSION = "1.9.0";
+const VERSION = "1.9.1";
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, "public");
 
@@ -265,6 +265,19 @@ function laptopPresent(r) {
   return Date.now() - r.lastPoll < PRESENCE_MS;
 }
 
+// The phone checks in every few seconds while it is foregrounded, and iOS
+// suspends the page when it is not — so this is effectively "is the Sotto app
+// open in front of the user right now".
+//
+// Reported on every poll so the laptop can show its status pill only while the
+// phone is actually in use. Without it the extension had no idea and showed the
+// pill on a timer, which meant it blinked on and off every poll cycle even with
+// the phone face-down in a bag.
+function phonePresent(r) {
+  if (!r) return false;
+  return Date.now() - r.lastSay < PRESENCE_MS;
+}
+
 function room(id) {
   let r = rooms.get(id);
   if (!r) {
@@ -301,7 +314,7 @@ function flush(r) {
   const waiters = r.waiters.splice(0, r.waiters.length);
   for (const w of waiters) {
     clearTimeout(w.timer);
-    json(w.res, 200, { messages: batch });
+    json(w.res, 200, { messages: batch, phone: phonePresent(r) });
   }
 }
 
@@ -488,7 +501,7 @@ const server = http.createServer(async (req, res) => {
 
     if (r.queue.length) {
       const batch = r.queue.splice(0, r.queue.length);
-      json(res, 200, { messages: batch });
+      json(res, 200, { messages: batch, phone: phonePresent(r) });
       return;
     }
 
@@ -496,7 +509,7 @@ const server = http.createServer(async (req, res) => {
     waiter.timer = setTimeout(() => {
       const i = r.waiters.indexOf(waiter);
       if (i !== -1) r.waiters.splice(i, 1);
-      json(res, 200, { messages: [] });
+      json(res, 200, { messages: [], phone: phonePresent(r) });
     }, HOLD_MS);
 
     r.waiters.push(waiter);

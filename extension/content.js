@@ -233,9 +233,16 @@
   }
 
   // ---- status pill -------------------------------------------------------
+  //
+  // The pill belongs to an active session. If the phone app is not open the
+  // user is not dictating, and nothing the pill could say is worth covering
+  // their screen for — including errors, which are only actionable while they
+  // are actually trying to use it.
 
   let pill = null;
   let pillTimer = null;
+  let phoneHere = false;
+  let notSetUpShown = false;
 
   function showPill(text, tone, sticky) {
     if (!pill) {
@@ -270,6 +277,13 @@
         if (pill) pill.style.opacity = "0";
       }, 2200);
     }
+  }
+
+  // Fades rather than removing, so the element is reused and a returning phone
+  // does not cause a layout flash.
+  function hidePill() {
+    clearTimeout(pillTimer);
+    if (pill) pill.style.opacity = "0";
   }
 
   function toast(message, bad) {
@@ -475,7 +489,13 @@
 
       const room = config.room;
       if (!/^[A-HJ-NP-Z2-9]{6}$/.test(room)) {
-        showPill("Sotto not set up", "dead", true);
+        // This retries every 3s, so showing it each time would reintroduce the
+        // blinking. Say it once; the onboarding tab and the popup are where
+        // setup actually happens.
+        if (!notSetUpShown) {
+          notSetUpShown = true;
+          showPill("Sotto not set up", "dead");
+        }
         await new Promise((r) => setTimeout(r, 3000));
         continue;
       }
@@ -491,10 +511,27 @@
         if (!res.ok) throw new Error("status " + res.status);
         const data = await res.json();
         backoff = 1000;
-        showPill(aesKey ? "Sotto ready" : "Sotto: open the app on your phone", aesKey ? "live" : "wait");
+
+        // The pill tracks the phone, not the extension. It used to be shown on
+        // every poll with a 2.2s fade, so on a 25s cycle it blinked on and off
+        // all day — including with the phone switched off in a bag, because it
+        // keyed off "do I hold a key" rather than "is the phone there".
+        //
+        // Now it appears when the phone app is open and stays put until it
+        // isn't. The relay reports that: the phone checks in every few seconds
+        // while foregrounded, and iOS suspends the page when it isn't.
+        phoneHere = !!data.phone;
+        if (phoneHere) {
+          showPill(aesKey ? "Sotto ready" : "Sotto: pairing…", aesKey ? "live" : "wait", true);
+        } else {
+          hidePill();
+        }
+
         if (data.messages && data.messages.length) await handle(data.messages);
       } catch {
-        showPill("Sotto offline", "dead", true);
+        // Only worth saying if they were mid-session. A relay hiccup while the
+        // phone is in a bag is not the user's problem.
+        if (phoneHere) showPill("Sotto offline", "dead", true);
         await new Promise((r) => setTimeout(r, backoff));
         backoff = Math.min(backoff * 1.7, 15000);
       }

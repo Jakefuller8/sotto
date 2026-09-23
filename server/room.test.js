@@ -247,6 +247,53 @@ t(
   "ok"
 );
 
+console.log("\nStatus pill follows the phone");
+
+// The pill was shown on every poll with a 2.2s fade, so on a 25s cycle it
+// blinked on and off all day — including with the phone switched off in a bag,
+// because it keyed off "do I hold a key" rather than "is the phone there".
+const contentSrc0 = read("../extension/content.js");
+const serverSrc1 = read("./server.js");
+
+t(
+  "relay reports phone presence to the laptop",
+  /function phonePresent\(r\)/.test(serverSrc1) ? "ok" : "missing",
+  "ok"
+);
+t(
+  "every poll response carries it",
+  (serverSrc1.match(/phone: phonePresent\(r\)/g) || []).length === 3
+    ? "ok"
+    : "not all three poll paths report it",
+  "ok"
+);
+t(
+  "pill shown only while the phone app is open",
+  /if \(phoneHere\) \{[\s\S]{0,140}showPill\(/.test(contentSrc0) ||
+    /phoneHere = !!data\.phone;[\s\S]{0,200}showPill\(/.test(contentSrc0)
+    ? "ok"
+    : "missing",
+  "ok"
+);
+t(
+  "and stays put rather than fading",
+  /showPill\(aesKey \? "Sotto ready"[\s\S]{0,80}, true\)/.test(contentSrc0) ? "ok" : "not sticky",
+  "ok"
+);
+t("hidden when the phone is away", /function hidePill\(\)/.test(contentSrc0) ? "ok" : "missing", "ok");
+// A relay hiccup with the phone in a bag is not worth covering their screen.
+t(
+  "errors are suppressed when the phone is not in use",
+  /if \(phoneHere\) showPill\("Sotto offline"/.test(contentSrc0) ? "ok" : "always shown",
+  "ok"
+);
+// This branch retries every 3s; re-showing each time would reintroduce blinking.
+t(
+  "the not-set-up notice fires once, not on every retry",
+  /notSetUpShown/.test(contentSrc0) ? "ok" : "missing",
+  "ok"
+);
+
 console.log("\nAlready-open tabs");
 
 // Declared content scripts only run on page load, so installing or updating
