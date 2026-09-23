@@ -391,10 +391,31 @@ code bug.
 
 ## Next steps
 
-**Submitted to the Chrome Web Store on 2026-09-22**, version 1.9.0, as
-**Unlisted**. Awaiting review (typically 1–3 days). Package built with
-`store/build-zip.sh`; listing text, permission justifications and screenshots
-are in `store/`.
+## ⚠️ Waiting on: upload 1.9.1 the moment 1.9.0 is approved
+
+**1.9.0 is in review** at the Chrome Web Store (submitted 2026-09-22,
+Unlisted). **`main` is already at 1.9.1**, which fixes the status pill
+blinking on and off every ~25 seconds on every chat tab, whether or not the
+phone was anywhere nearby. Cosmetic, but it is the kind of jank that gets an
+extension uninstalled without a bug report.
+
+A new package cannot be uploaded while one is pending review, so the order is
+fixed:
+
+1. 1.9.0 approved → link goes live
+2. `store/build-zip.sh` → item → **Package** → **Upload new package** →
+   submit. Listing text, screenshots and privacy answers carry over; only the
+   package is replaced
+3. 1.9.1 approved → Chrome auto-updates users within hours. Nobody re-pairs;
+   `chrome.storage.local` survives updates
+4. **Only then** post the link to the all-Wharton WhatsApp (~2k people). It is
+   a one-shot audience — spend it on the build without the blink
+
+**Updates are reviewed too.** They usually clear faster than a first
+submission, but not instantly, and occasionally get a full re-review. If 1.9.1
+is still pending after a couple of days, post anyway: a live link with a
+cosmetic blink beats an unposted link, and auto-update fixes it underneath
+existing users.
 
 **Blocking the pilot:**
 
