@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto — speak quietly to AI</title>
+
+<!-- The reason this page exists. The Chrome Web Store renders its listing with
+     JavaScript, so crawlers that do not execute it — WhatsApp's among them —
+     find no preview tags and show a bare link. These are static, so a shared
+     link gets a proper card. og:image must be an absolute URL. -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://jakefuller8.github.io/sotto/app/">
+<meta property="og:title" content="Sotto — speak quietly to AI">
+<meta property="og:description" content="Use your phone as a microphone to prompt Claude or ChatGPT on your laptop. Free, 2 minute setup, end-to-end encrypted.">
+<meta property="og:image" content="https://jakefuller8.github.io/sotto/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="description" content="Use your phone as a microphone to prompt Claude or ChatGPT on your laptop. Free, 2 minute setup, end-to-end encrypted.">
+
+<style>
+  :root { --ink:#14161b; --raised:#1e222a; --edge:#2b303a; --fg:#e9edf3;
+          --dim:#8a94a2; --live:#4ec78f; --signal:#3d7bf7; }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; background:var(--ink); color:var(--fg);
+    font:17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding:56px 22px 80px;
+  }
+  .wrap { max-width:620px; margin:0 auto; }
+  h1 { font-size:40px; line-height:1.12; font-weight:600; margin:0 0 14px; letter-spacing:-.5px; }
+  .lede { font-size:19px; color:var(--dim); margin:0 0 30px; }
+  .cta {
+    display:inline-block; background:var(--signal); color:#fff; text-decoration:none;
+    font-size:17px; font-weight:500; padding:14px 26px; border-radius:10px;
+  }
+  .under { font-size:14px; color:var(--dim); margin:14px 0 0; }
+  img.shot { width:100%; border-radius:12px; border:1px solid var(--edge); margin:38px 0 0; display:block; }
+  h2 { font-size:19px; font-weight:600; margin:44px 0 12px; }
+  ol, ul { padding-left:22px; margin:0; }
+  li { margin:7px 0; }
+  .note { background:var(--raised); border:1px solid var(--edge); border-radius:12px;
+          padding:16px 18px; font-size:15px; color:var(--dim); margin:26px 0 0; }
+  .note b { color:var(--fg); font-weight:500; }
+  footer { margin:50px 0 0; padding-top:22px; border-top:1px solid var(--edge);
+           font-size:14px; color:var(--dim); }
+  footer a { color:var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Speak quietly.<br>It types for you.</h1>
+  <p class="lede">Use your phone as a microphone to prompt Claude or ChatGPT on your laptop. Hold a button, talk at a volume only you can hear, and the words land in your chat box.</p>
+
+  <a class="cta" href="https://chromewebstore.google.com/detail/lnfmionofldifnkfhialkmfdpcimindg">Add to Chrome — free</a>
+  <p class="under">Then scan a QR with your phone. About two minutes.</p>
+
+  <img class="shot" src="../og.png" alt="Sotto running on a phone next to the tagline: speak quietly, it types for you.">
+
+  <h2>How it works</h2>
+  <ol>
+    <li>Install the Chrome extension on your laptop</li>
+    <li>Scan the QR code that appears, with your phone camera</li>
+    <li>Hold the button on your phone and speak quietly</li>
+    <li>The words appear in your AI chat box as you say them</li>
+  </ol>
+
+  <h2>Where it works</h2>
+  <p style="margin:0;color:var(--dim)">claude.ai, chatgpt.com, gemini.google.com, aistudio.google.com and perplexity.ai.</p>
+
+  <h2>Encrypted end to end</h2>
+  <p style="margin:0;color:var(--dim)">Your speech is turned into text on your phone and encrypted before it leaves the device. The relay forwards text it has no key to read — not as a policy, but by construction. Your phone and laptop agree on a key directly, and both show a matching safety number so you can check nobody intercepted the exchange.</p>
+
+  <div class="note">
+    <b>Two things worth knowing.</b> iPhone plays a short chime when it starts
+    listening — Apple gives no way to mute it, so it fires once per session
+    rather than once per sentence. And the phone app needs Safari on iPhone or
+    Chrome on Android, because that is where on-device speech recognition lives.
+  </div>
+
+  <footer>
+    Built at Wharton. Feedback and bug reports very welcome:
+    <a href="mailto:Fullerja8@gmail.com">Fullerja8@gmail.com</a><br>
+    <a href="../">Privacy policy</a>
+  </footer>
+
+</div>
+</body>
+</html>
