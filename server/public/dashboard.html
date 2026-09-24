@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sotto — pilot</title>
+<style>
+  :root {
+    --ink:#14161b; --raised:#1e222a; --edge:#2b303a;
+    --fg:#e9edf3; --dim:#8a94a2; --faint:#5a636e;
+    /* Validated against the #1e222a surface in dark mode: lightness band,
+       chroma floor, CVD separation, normal-vision floor and contrast all pass.
+       The app's own #4ec78f is too light here and failed the band. */
+    --users:#35a071; --dict:#3d7bf7;
+    --warn:#dfa33e; --bad:#c2564d;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--ink); color:var(--fg);
+    font:15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding:calc(env(safe-area-inset-top) + 26px) 20px 60px;
+  }
+  .wrap { max-width:840px; margin:0 auto; }
+  header { display:flex; align-items:baseline; justify-content:space-between; gap:14px; margin:0 0 22px; }
+  h1 { font-size:20px; font-weight:500; margin:0; }
+  .meta { font-size:12px; color:var(--faint); }
+
+  .hero {
+    background:var(--raised); border:1px solid var(--edge); border-radius:14px;
+    padding:20px 22px; margin:0 0 14px;
+  }
+  .hero .label { font-size:13px; color:var(--dim); }
+  .hero .n { font-size:46px; font-weight:600; line-height:1.1; margin:4px 0 0; letter-spacing:-1px; }
+  .hero .why { font-size:13px; color:var(--faint); margin:8px 0 0; line-height:1.5; }
+
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:10px; margin:0 0 22px; }
+  .tile { background:var(--raised); border-radius:12px; padding:14px 16px; }
+  .tile .label { font-size:12px; color:var(--dim); }
+  .tile .n { font-size:26px; font-weight:500; margin:3px 0 0; }
+  .tile .sub { font-size:11px; color:var(--faint); margin:2px 0 0; }
+
+  .chart { margin:0 0 26px; }
+  .chart h2 { font-size:14px; font-weight:500; margin:0 0 2px; }
+  .chart .cap { font-size:12px; color:var(--faint); margin:0 0 10px; }
+  svg { display:block; width:100%; height:auto; }
+  .grid { stroke:var(--edge); stroke-width:1; }
+  .axis { fill:var(--faint); font-size:10px; }
+
+  .flag { border-radius:10px; padding:12px 14px; font-size:13px; line-height:1.5; margin:0 0 18px; }
+  .flag.ok { background:rgba(53,160,113,.12); color:#9fe0c3; }
+  .flag.bad { background:rgba(194,86,77,.14); color:#f0b3ad; }
+
+  details { margin:22px 0 0; }
+  summary { font-size:13px; color:var(--dim); cursor:pointer; }
+  table { border-collapse:collapse; width:100%; margin:12px 0 0; font-size:13px; }
+  th, td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--edge); }
+  th { color:var(--dim); font-weight:500; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  footer { margin:30px 0 0; font-size:12px; color:var(--faint); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Sotto — pilot</h1>
+    <span class="meta" id="meta">loading…</span>
+  </header>
+
+  <div id="flag"></div>
+
+  <!-- The headline number, given its own block because it is the one the
+       pilot exists to produce. Everything else is context for it. -->
+  <div class="hero">
+    <div class="label">Returning after 7 days</div>
+    <div class="n" id="d7">—</div>
+    <p class="why">Downloads measure curiosity. This measures whether there is a product.
+      It needs a week of history before it means anything.</p>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><div class="label">Active today</div><div class="n" id="today">—</div><div class="sub" id="todaySub">people who dictated</div></div>
+    <div class="tile"><div class="label">Active this week</div><div class="n" id="week">—</div><div class="sub">distinct people</div></div>
+    <div class="tile"><div class="label">Total users</div><div class="n" id="users">—</div><div class="sub">since <span id="since">—</span></div></div>
+    <div class="tile"><div class="label">Dictations</div><div class="n" id="dict">—</div><div class="sub"><span id="avg">—</span> avg length</div></div>
+  </div>
+
+  <!-- Two charts rather than one with two axes. Users and dictations differ by
+       an order of magnitude, and a dual-axis chart invites false conclusions
+       about their relationship. Single series each, so the title is the legend. -->
+  <div class="chart">
+    <h2>Active people per day</h2>
+    <p class="cap">Last 30 days. Hover a bar for the date.</p>
+    <svg id="cUsers" viewBox="0 0 800 150" role="img" aria-labelledby="tUsers"><title id="tUsers">Daily active people over the last 30 days</title></svg>
+  </div>
+
+  <div class="chart">
+    <h2>Dictations per day</h2>
+    <p class="cap">Last 30 days. Hover a bar for the date.</p>
+    <svg id="cDict" viewBox="0 0 800 150" role="img" aria-labelledby="tDict"><title id="tDict">Dictations per day over the last 30 days</title></svg>
+  </div>
+
+  <details>
+    <summary>Show the numbers as a table</summary>
+    <table><thead><tr><th>Date</th><th class="num">People</th><th class="num">Dictations</th></tr></thead>
+      <tbody id="tbody"></tbody></table>
+  </details>
+
+  <footer>
+    Refreshes every 30s · raw JSON at <a href="/stats" style="color:var(--dim)">/stats</a>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var NS = "http://www.w3.org/2000/svg";
+  var el = function (id) { return document.getElementById(id); };
+
+  function bars(svg, series, key, colour) {
+    while (svg.childNodes.length > 1) svg.removeChild(svg.lastChild);
+
+    var W = 800, H = 150, padB = 20, padL = 30;
+    var max = Math.max(1, ...series.map(function (d) { return d[key]; }));
+    var slot = (W - padL) / series.length;
+    var bw = Math.max(3, slot - 3); // a 3px surface gap between bars
+
+    // Two recessive gridlines: zero and the max. Enough to read scale.
+    [0, max].forEach(function (v) {
+      var y = H - padB - (v / max) * (H - padB - 12);
+      var l = document.createElementNS(NS, "line");
+      l.setAttribute("x1", padL); l.setAttribute("x2", W);
+      l.setAttribute("y1", y); l.setAttribute("y2", y);
+      l.setAttribute("class", "grid");
+      svg.appendChild(l);
+      var t = document.createElementNS(NS, "text");
+      t.setAttribute("x", 0); t.setAttribute("y", y + 3);
+      t.setAttribute("class", "axis");
+      t.textContent = v;
+      svg.appendChild(t);
+    });
+
+    series.forEach(function (d, i) {
+      var v = d[key];
+      var h = v === 0 ? 0 : Math.max(2, (v / max) * (H - padB - 12));
+      var x = padL + i * slot;
+      var y = H - padB - h;
+
+      if (h > 0) {
+        var r = document.createElementNS(NS, "rect");
+        r.setAttribute("x", x); r.setAttribute("y", y);
+        r.setAttribute("width", bw); r.setAttribute("height", h);
+        // Rounded data-end only; the bar stays anchored to the baseline.
+        r.setAttribute("rx", Math.min(4, bw / 2));
+        r.setAttribute("fill", colour);
+        var ttl = document.createElementNS(NS, "title");
+        ttl.textContent = d.date + " — " + v + " " + (key === "users" ? "people" : "dictations");
+        r.appendChild(ttl);
+        svg.appendChild(r);
+      } else {
+        // A visible floor for zero days, so a gap reads as "none" not "no data".
+        var z = document.createElementNS(NS, "rect");
+        z.setAttribute("x", x); z.setAttribute("y", H - padB - 1);
+        z.setAttribute("width", bw); z.setAttribute("height", 1);
+        z.setAttribute("fill", "#2b303a");
+        var zt = document.createElementNS(NS, "title");
+        zt.textContent = d.date + " — none";
+        z.appendChild(zt);
+        svg.appendChild(z);
+      }
+
+      // Label only the ends, never every bar.
+      if (i === 0 || i === series.length - 1) {
+        var lb = document.createElementNS(NS, "text");
+        lb.setAttribute("x", x + bw / 2);
+        lb.setAttribute("y", H - 6);
+        lb.setAttribute("class", "axis");
+        lb.setAttribute("text-anchor", i === 0 ? "start" : "end");
+        lb.textContent = d.date.slice(5);
+        svg.appendChild(lb);
+      }
+    });
+  }
+
+  function render(s) {
+    el("d7").textContent = s.returningUsers.d7;
+    el("today").textContent = s.activeToday;
+    el("week").textContent = s.activeThisWeek;
+    el("users").textContent = s.uniqueUsers;
+    el("dict").textContent = s.dictations.toLocaleString();
+    el("since").textContent = s.collectingSince;
+    el("avg").textContent = s.avgCiphertextChars ? s.avgCiphertextChars + " chars" : "—";
+    el("meta").textContent = "v" + s.version + " · " + s.activeRooms + " rooms open · " +
+      new Date().toLocaleTimeString();
+
+    // Persistence is the one status that invalidates everything above it.
+    var f = el("flag");
+    if (s.persistence === "disk") {
+      f.className = "flag ok";
+      f.textContent = "Counters are on a disk — they survive redeploys.";
+    } else {
+      f.className = "flag bad";
+      f.textContent = "persistence is \"" + s.persistence + "\" — these counters are wiped on " +
+        "the next deploy, so 7-day retention cannot accumulate. Attach a Render disk and set SOTTO_DATA_DIR.";
+    }
+
+    var d = s.daily || [];
+    bars(el("cUsers"), d, "users", "#35a071");
+    bars(el("cDict"), d, "dictations", "#3d7bf7");
+
+    el("tbody").innerHTML = d.slice().reverse().map(function (r) {
+      return "<tr><td>" + r.date + "</td><td class='num'>" + r.users +
+             "</td><td class='num'>" + r.dictations + "</td></tr>";
+    }).join("");
+  }
+
+  function load() {
+    fetch("/stats", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function () { el("meta").textContent = "can't reach the relay"; });
+  }
+
+  load();
+  setInterval(load, 30000);
+})();
+</script>
+</body>
+</html>
